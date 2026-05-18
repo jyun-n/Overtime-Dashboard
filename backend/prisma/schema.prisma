@@ -1,0 +1,187 @@
+// 연장 관리 대시보드 Prisma 스키마
+//
+// 핵심 모델:
+//   User           — 계정 (admin/user, 생성자/탈퇴자 추적)
+//   LoginLog       — 로그인 시도 기록 (성공/실패, IP, UA)
+//   UploadLog      — 엑셀 업로드 감사 로그 (누가, 어떤 파일, 언제, IP)
+//   HrEmployee     — 인사정보 (사원번호, 사원명, 소속부서, 직군)
+//   OvertimeRecord — 월별 연장근무 (yearMonth + empNo 유니크)
+//   ServerLog      — 서버 요청/이벤트 로그 (Winston과 동시 기록)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum UploadFileType {
+  HR        // 인사정보 파일
+  OVERTIME  // 연장근무 파일
+  DOWNLOAD  // 다운로드 기록
+}
+
+enum LogLevel {
+  DEBUG
+  INFO
+  WARN
+  ERROR
+}
+
+// =====================
+// 계정
+// =====================
+model User {
+  id           String  @id @default(uuid())
+  username     String  @unique
+  passwordHash String
+  name         String
+  role         Role    @default(USER)
+
+  // 추가 인사정보
+  empNo        String?
+  department   String?
+  jobGroup     String?
+
+  // 계정 생성자 (admin이 만들었으면 그 admin id)
+  createdById  String?
+  createdBy    User?   @relation("CreatedUsers", fields: [createdById], references: [id])
+  createdUsers User[]  @relation("CreatedUsers")
+
+  // 탈퇴 처리 (soft delete)
+  isWithdrawn    Boolean   @default(false)
+  withdrawnAt    DateTime?
+  withdrawnById  String?
+  withdrawnBy    User?     @relation("WithdrawnUsers", fields: [withdrawnById], references: [id])
+  withdrawnUsers User[]    @relation("WithdrawnUsers")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  loginLogs  LoginLog[]
+  uploadLogs UploadLog[]
+  serverLogs ServerLog[]
+
+  @@index([role])
+  @@index([isWithdrawn])
+}
+
+// =====================
+// 로그인 기록 (성공만)
+// =====================
+model LoginLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  ip        String
+  userAgent String?
+  loginAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([loginAt])
+}
+
+// =====================
+// 업로드 감사 로그 (최소)
+// =====================
+// 누가(userId), 언제(uploadedAt), 어디서(ip), 무엇을(fileType + yearMonth)
+// 원본 파일은 보관하지 않음 — 데이터는 DB에 적재됨.
+model UploadLog {
+  id         String         @id @default(uuid())
+  userId     String
+  user       User           @relation(fields: [userId], references: [id])
+  ip         String
+  fileType   UploadFileType
+  yearMonth  String?        // OVERTIME 한정. "YYYY-MM" 또는 다운로드 시 "YYYY-MM~YYYY-MM"
+  uploadedAt DateTime       @default(now())
+
+  @@index([userId])
+  @@index([uploadedAt])
+  @@index([fileType])
+  @@index([yearMonth])
+}
+
+// =====================
+// 인사정보
+// =====================
+// 인사파일 컬럼: [사원번호] [사원명] [소속부서] [직군]
+// 업로드 시 empNo 기준 upsert.
+model HrEmployee {
+  id         String  @id @default(uuid())
+  empNo      String  @unique // 사원번호
+  name       String           // 사원명
+  department String           // 소속부서
+  jobGroup   String           // 직군
+
+  uploadLogId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([department])
+  @@index([jobGroup])
+}
+
+// =====================
+// 연장근무 (월별)
+// =====================
+// 연장파일 컬럼:
+//   [사번] [사원명] [부서] [자동] [자동연장_금액] [초과] [초과연장_금액]
+//   [연장] [연장수당(총계)] [시급]
+// 같은 (yearMonth, empNo) 재업로드 시 upsert로 덮어쓰기.
+model OvertimeRecord {
+  id        String @id @default(uuid())
+  yearMonth String  // "YYYY-MM" (업로드 폼에서 선택)
+  empNo     String  // 사번
+  name      String  // 사원명 (업로드 시점 스냅샷)
+  department String // 부서   (업로드 시점 스냅샷)
+
+  autoHours      Float? // 자동
+  autoAmount     Float? // 자동연장_금액
+  excessHours    Float? // 초과
+  excessAmount   Float? // 초과연장_금액
+  extensionHours Float? // 연장
+  totalAllowance Float? // 연장수당(총계)
+  hourlyWage     Float? // 시급
+
+  uploadLogId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([yearMonth, empNo])
+  @@index([yearMonth])
+  @@index([empNo])
+  @@index([department])
+}
+
+// =====================
+// 서버 로그
+// =====================
+// Winston과 함께 기록. DB는 조회·집계용, 파일은 보관·운영 디버깅용.
+model ServerLog {
+  id         String   @id @default(uuid())
+  level      LogLevel
+  message    String
+  context    Json?    // 자유 형식 메타데이터
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  ip         String?
+  method     String?  // HTTP method
+  path       String?  // request path
+  statusCode Int?
+  durationMs Int?     // 요청 처리 시간
+  createdAt  DateTime @default(now())
+
+  @@index([level])
+  @@index([createdAt])
+  @@index([userId])
+  @@index([path])
+}
