@@ -843,6 +843,7 @@ function PersonsPanel({
         <div className="mt-4 flex-1" style={{ minHeight: 0 }}>
           <ResponsiveContainer width="100%" height="100%" minHeight={320}>
             <ComposedChart
+              key={chartData.length ? 'data' : 'empty'}
               data={chartData}
               margin={{ top: 36, right: 8, left: -16, bottom: 108 }}
               barCategoryGap="20%"
@@ -1069,6 +1070,13 @@ function DeptDetailModal({
   const [r, setR] = useState<DateRange>(initialRange ?? defaultDetailRange());
   const months = useMemo(() => monthsBetween(r.from, r.to), [r]);
   const [data, setData] = useState<{ label: string; value: number }[]>([]);
+  // 모달 등장 애니메이션(220ms)이 끝나고 ResponsiveContainer size가 안정된 뒤 차트를 마운트해야
+  // recharts의 enter 애니메이션이 처음부터 정상 작동한다.
+  const [chartReady, setChartReady] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setChartReady(true), 260);
+    return () => clearTimeout(t);
+  }, []);
   const metricLabel = metric === 'auto' ? '자동연장' : '초과연장';
   const lineColor = metric === 'auto' ? COLOR_AUTO_LIGHT : COLOR_EXCESS_LIGHT;
 
@@ -1088,6 +1096,7 @@ function DeptDetailModal({
         <span className="text-[12px] text-slate-400">(단위: 시간)</span>
       </div>
       <div className="rounded-[14px] border border-white/10 bg-white/[0.025] p-4">
+        {(chartReady && data.length > 0) ? (
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart data={data} margin={{ top: 40, right: 24, left: 8, bottom: 20 }}>
             <defs>
@@ -1114,6 +1123,7 @@ function DeptDetailModal({
             </Area>
           </ComposedChart>
         </ResponsiveContainer>
+        ) : <div style={{ height: 300 }} />}
       </div>
     </Modal>
   );
@@ -1131,6 +1141,12 @@ function PersonDetailModal({
   const [r, setR] = useState<DateRange>(initialRange ?? defaultDetailRange());
   const months = useMemo(() => monthsBetween(r.from, r.to), [r]);
   const [data, setData] = useState<{ label: string; value: number; amount: number }[]>([]);
+  // 모달 등장 애니메이션(220ms) 종료 후 차트 마운트 → enter 애니메이션 정상 작동
+  const [chartReady, setChartReady] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setChartReady(true), 260);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     if (months.length === 0) return;
@@ -1161,6 +1177,7 @@ function PersonDetailModal({
         </div>
       </div>
       <div className="rounded-[14px] border border-white/10 bg-white/[0.025] p-3">
+        {(chartReady && data.length > 0) ? (
         <ResponsiveContainer width="100%" height={280}>
           <ComposedChart data={data} margin={{ top: 28, right: 16, left: -20, bottom: 4 }} barCategoryGap="40%">
             <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
@@ -1187,7 +1204,7 @@ function PersonDetailModal({
               }}
               cursor={{ fill: 'rgba(255,255,255,0.03)' }}
             />
-            <Bar yAxisId="left" dataKey="value" name="초과" fill="#38bdf8" radius={[4, 4, 0, 0]} isAnimationActive animationDuration={1000} animationEasing="ease-out">
+            <Bar yAxisId="left" dataKey="value" name="초과" fill="#38bdf8" radius={[4, 4, 0, 0]} isAnimationActive animationDuration={800}>
               {showLabels && (
                 <LabelList dataKey="value" position="insideBottom" offset={10} fill="#ffffff" stroke="#0b1728" strokeWidth={3} paintOrder="stroke" fontSize={12} fontWeight={700} formatter={(v: number) => v.toLocaleString()} />
               )}
@@ -1197,7 +1214,7 @@ function PersonDetailModal({
               stroke={LINE_AMT} strokeWidth={2.5}
               dot={{ r: 4, fill: LINE_AMT, stroke: '#0b1728', strokeWidth: 2 }}
               activeDot={{ r: 6, fill: LINE_AMT, stroke: '#0b1728', strokeWidth: 2 }}
-              isAnimationActive animationDuration={1300} animationEasing="ease-out"
+              isAnimationActive animationDuration={1100}
             >
               {showLabels && (
                 <LabelList dataKey="amount" position="top" offset={10} fill={LINE_AMT} fontSize={11} fontWeight={600} stroke="#0b1728" strokeWidth={3} paintOrder="stroke" formatter={(v: number) => `${v.toLocaleString()}천원`} />
@@ -1205,6 +1222,7 @@ function PersonDetailModal({
             </Line>
           </ComposedChart>
         </ResponsiveContainer>
+        ) : <div style={{ height: 280 }} />}
       </div>
     </Modal>
   );

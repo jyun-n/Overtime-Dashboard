@@ -146,15 +146,13 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div key={tab} style={{ animation: 'tabFadeIn 320ms ease-out both', willChange: 'opacity, transform' }}>
-        {tab === 'overview'
-          ? <MainOverview range={range} jobFilter={jobFilter} onDataReady={setOverviewData} />
-          : (
-            <div ref={detailRef}>
-              <DetailTrends onSectionsChange={setDetailSections} />
-            </div>
-          )
-        }
+      {/* 두 탭 컴포넌트를 항상 마운트하고 display로 토글 — unmount/mount로 인한
+          fetch race condition 방지 (탭을 빠르게 왔다갔다 할 때 데이터 누락 방지) */}
+      <div style={{ display: tab === 'overview' ? 'block' : 'none' }}>
+        <MainOverview range={range} jobFilter={jobFilter} onDataReady={setOverviewData} />
+      </div>
+      <div style={{ display: tab === 'detail' ? 'block' : 'none' }} ref={detailRef}>
+        <DetailTrends onSectionsChange={setDetailSections} />
       </div>
     </div>
   );
