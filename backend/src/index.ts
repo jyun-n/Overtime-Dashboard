@@ -23,10 +23,11 @@ app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
 app.use(requestLogger);
 
-// 글로벌 API rate limit — IP당 분당 120회. login/reset-password 등은 추가로 더 엄격한 limiter 적용됨.
+// 글로벌 API rate limit — IP당 분당 600회. login/reset-password 등은 추가로 더 엄격한 limiter 적용됨.
+// 사내 NAT 뒤에서 다수 사용자가 같은 외부 IP로 보일 수 있어 여유 있게 잡음.
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  limit: 120,
+  limit: 600,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   handler: (req, res) => {

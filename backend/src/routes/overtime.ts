@@ -164,16 +164,22 @@ router.get('/top-depts', async (req, res) => {
 router.get('/top-persons', async (req, res) => {
   const parsed = rangeSchema.extend({
     dept: z.string().optional(),
+    depts: z.string().optional(), // 콤마 구분 다중 부서 (한 호출로 처리해 결과 일관성 보장)
     limit: z.coerce.number().default(15),
   }).safeParse(req.query);
   if (!parsed.success) { res.status(400).json({ error: 'invalid_params' }); return; }
-  const { from, to, dept, limit } = parsed.data;
+  const { from, to, dept, depts, limit } = parsed.data;
   const months = monthsBetween(from, to);
+
+  // depts(다중) 우선, 없으면 dept(단일) fallback. 둘 다 없으면 전체.
+  const deptList = depts
+    ? depts.split(',').map((d) => d.trim()).filter(Boolean)
+    : (dept && dept !== '전체 부서' ? [dept] : null);
 
   const records = await prisma.overtimeRecord.findMany({
     where: {
       yearMonth: { in: months },
-      ...(dept && dept !== '전체 부서' ? { department: dept } : {}),
+      ...(deptList && deptList.length > 0 ? { department: { in: deptList } } : {}),
     },
     select: { empNo: true, name: true, department: true, excessHours: true, excessAmount: true },
   });

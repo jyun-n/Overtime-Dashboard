@@ -225,8 +225,8 @@ function DeptTrendSection({ onSectionData }: { onSectionData?: (s: DetailSection
             <ComposedChart data={data} margin={{ top: showLabels ? 24 : 16, right: 16, left: -12, bottom: 4 }} barCategoryGap="28%">
               <CartesianGrid stroke="rgba(255,255,255,0.04)" vertical={false} />
               <XAxis dataKey="month" stroke="transparent" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} tickMargin={8} />
-              <YAxis yAxisId="left" stroke="transparent" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} width={48} />
-              <YAxis yAxisId="right" orientation="right" stroke="transparent" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} width={52} tickFormatter={(v: number) => Math.round(v).toLocaleString()} />
+              <YAxis yAxisId="left" stroke="transparent" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} width={52} tickFormatter={(v: number) => v >= 1000 ? `${+(v / 1000).toFixed(1)}k` : v.toLocaleString()} />
+              <YAxis yAxisId="right" orientation="right" stroke="transparent" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} width={52} tickFormatter={(v: number) => v >= 1000 ? `${+(v / 1000).toFixed(1)}k` : v.toLocaleString()} />
               <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
               <Legend content={() => <BarLegend categories={selectedDepts} showAmount />} />
               {selectedDepts.map((d, i) => (
@@ -348,8 +348,8 @@ function JobTrendSection({ onSectionData }: { onSectionData?: (s: DetailSectionD
             <ComposedChart data={data} margin={{ top: 36, right: 16, left: -12, bottom: 4 }} barCategoryGap="28%">
               <CartesianGrid stroke="rgba(255,255,255,0.04)" vertical={false} />
               <XAxis dataKey="month" stroke="transparent" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} tickMargin={8} />
-              <YAxis yAxisId="left" stroke="transparent" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} width={48} />
-              <YAxis yAxisId="right" orientation="right" stroke="transparent" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} width={52} tickFormatter={(v: number) => Math.round(v).toLocaleString()} />
+              <YAxis yAxisId="left" stroke="transparent" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} width={52} tickFormatter={(v: number) => v >= 1000 ? `${+(v / 1000).toFixed(1)}k` : v.toLocaleString()} />
+              <YAxis yAxisId="right" orientation="right" stroke="transparent" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} width={52} tickFormatter={(v: number) => v >= 1000 ? `${+(v / 1000).toFixed(1)}k` : v.toLocaleString()} />
               <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
               <Legend content={() => <BarLegend categories={selectedCats} showAmount />} />
               {selectedCats.map((c, i) => (
@@ -472,8 +472,8 @@ useEffect(() => {
             <ComposedChart data={data} margin={{ top: 36, right: 16, left: -12, bottom: 4 }} barCategoryGap="28%">
               <CartesianGrid stroke="rgba(255,255,255,0.04)" vertical={false} />
               <XAxis dataKey="month" stroke="transparent" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} tickMargin={8} />
-              <YAxis yAxisId="left" stroke="transparent" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} width={48} />
-              <YAxis yAxisId="right" orientation="right" stroke="transparent" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} width={52} tickFormatter={(v: number) => Math.round(v).toLocaleString()} />
+              <YAxis yAxisId="left" stroke="transparent" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} width={52} tickFormatter={(v: number) => v >= 1000 ? `${+(v / 1000).toFixed(1)}k` : v.toLocaleString()} />
+              <YAxis yAxisId="right" orientation="right" stroke="transparent" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} width={52} tickFormatter={(v: number) => v >= 1000 ? `${+(v / 1000).toFixed(1)}k` : v.toLocaleString()} />
               <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
               <Legend content={() => <BarLegend categories={selectedPersons.map(p => `${p.name} (${p.dept})`)} showAmount />} />
               {selectedPersons.map((p, i) => (

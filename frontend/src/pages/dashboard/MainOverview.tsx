@@ -337,6 +337,15 @@ export default function MainOverview({ range, jobFilter, onDataReady }: { range:
   const [reportPersons, setReportPersons] = useState<{ name: string; dept: string; 초과: number; 초과연장금액: number }[]>([]);
   const [personModal, setPersonModal] = useState<{ name: string; dept: string; empNo: string } | null>(null);
 
+  // 페이지 진입 직후 KPI 카드 enter 애니메이션과 레이아웃 안정화 시간을 기다린 뒤 메인 차트를 마운트.
+  // 이 가드가 없으면 ResponsiveContainer가 안정되지 않은 size로 첫 측정 → enter 애니메이션이
+  // invisible 상태에서 끝나고, 데이터 도착 시 update transition으로 "밑에서 찌그러져 올라오는" 효과가 보임.
+  const [chartReady, setChartReady] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setChartReady(true), 250);
+    return () => clearTimeout(t);
+  }, []);
+
   // 초기 진입 여부: range가 기본값(전달 단일월)과 같으면 전월 대비 표시
   const defaultYm = todayPrevMonthYm();
   const isDefaultRange = range.from === defaultYm && range.to === defaultYm;
@@ -444,6 +453,7 @@ export default function MainOverview({ range, jobFilter, onDataReady }: { range:
         <Panel>
           <div className="flex flex-col gap-4">
             <Section title="연장시간" subtitle="(단위: 시간)">
+              {(chartReady && hours.length > 0) ? (
               <ResponsiveContainer width="100%" height={280}>
                 <ComposedChart data={hours} margin={{ top: showInnerLabels ? 32 : 20, right: 36, left: -20, bottom: 0 }}>
                   <defs>
@@ -458,7 +468,7 @@ export default function MainOverview({ range, jobFilter, onDataReady }: { range:
                   </defs>
                   <CartesianGrid stroke="rgba(255,255,255,0.04)" vertical={false} />
                   <XAxis dataKey="label" stroke="transparent" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis stroke="transparent" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis stroke="transparent" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} width={52} tickFormatter={(v: number) => v >= 1000 ? `${+(v / 1000).toFixed(1)}k` : v.toLocaleString()} />
                   <Tooltip content={<HoursTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.08)', strokeWidth: 1 }} />
                   <Legend
                     wrapperStyle={{ width: '100%', left: 0 }}
@@ -496,13 +506,15 @@ export default function MainOverview({ range, jobFilter, onDataReady }: { range:
                   </Line>
                 </ComposedChart>
               </ResponsiveContainer>
+              ) : <div style={{ height: 280 }} />}
             </Section>
 
             <div className="border-t border-white/[0.05]" />
 
             <Section title="연장수당" subtitle="(단위: 천만원)">
+              {(chartReady && amount.length > 0) ? (
               <ResponsiveContainer width="100%" height={280}>
-                <ComposedChart data={amount} margin={{ top: showInnerLabels ? 32 : 20, right: 36, left: -20, bottom: 0 }} barCategoryGap="30%">
+                <ComposedChart key={amount.length} data={amount} margin={{ top: showInnerLabels ? 32 : 20, right: 36, left: -20, bottom: 0 }} barCategoryGap="30%">
                   <CartesianGrid stroke="rgba(255,255,255,0.04)" vertical={false} />
                   <XAxis dataKey="label" stroke="transparent" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
                   <YAxis stroke="transparent" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
@@ -525,7 +537,7 @@ export default function MainOverview({ range, jobFilter, onDataReady }: { range:
                       <LabelList dataKey="자동연장" position="insideTop" fill="#e2e8f0" fontSize={10} offset={6} formatter={(v: number) => v.toFixed(1)} />
                     )}
                   </Bar>
-                  <Bar dataKey="초과연장" stackId="a" fill="#d97706" name="초과연장" radius={[3, 3, 0, 0]} isAnimationActive animationDuration={1100}>
+                  <Bar dataKey="초과연장" stackId="a" fill="#d97706" name="초과연장" radius={[3, 3, 0, 0]} isAnimationActive animationDuration={900} animationBegin={900}>
                     {showInnerLabels && (
                       <LabelList dataKey="초과연장" position="insideTop" fill="#fff" fontSize={10} offset={6} formatter={(v: number) => v.toFixed(1)} />
                     )}
@@ -543,6 +555,7 @@ export default function MainOverview({ range, jobFilter, onDataReady }: { range:
                   </Line>
                 </ComposedChart>
               </ResponsiveContainer>
+              ) : <div style={{ height: 280 }} />}
             </Section>
           </div>
         </Panel>
@@ -762,41 +775,26 @@ function PersonsPanel({
     if (months.length === 0) return;
     // 선택된 부서가 없으면 데이터 비움
     if (includedDepts.length === 0) { setPersons([]); return; }
-    // 전체 선택이면 dept 파라미터 없이 조회
+
+    // 백엔드의 depts(콤마 구분) 파라미터로 한 번에 처리 → 전체/일부 모두 동일 합산 경로 사용,
+    // 결과 일관성 보장 + race 위험 감소.
+    let alive = true;
     const isAll = includedDepts.length === allDepts.length;
-    if (isAll) {
-      api.get('/overtime/top-persons', {
-        params: { from: months[0], to: months[months.length - 1], limit: 15 },
-      }).then(({ data }) => setPersons(data.data)).catch(() => {});
-    } else {
-      // 선택된 부서별로 조회 후 합산해서 상위 15명 추출
-      Promise.all(
-        includedDepts.map((dept) =>
-          api.get('/overtime/top-persons', {
-            params: { from: months[0], to: months[months.length - 1], limit: 999, dept },
-          }).then(({ data }) => data.data as { empNo: string; name: string; dept: string; 초과: number; 초과연장: number }[])
-          .catch(() => [] as { empNo: string; name: string; dept: string; 초과: number; 초과연장: number }[])
-        )
-      ).then((results) => {
-        const merged = new Map<string, { empNo: string; name: string; dept: string; 초과: number; 초과연장: number }>();
-        for (const list of results) {
-          for (const p of list) {
-            const cur = merged.get(p.empNo) ?? { ...p, 초과: 0, 초과연장: 0 };
-            cur.초과 += p.초과;
-            cur.초과연장 += p.초과연장;
-            merged.set(p.empNo, cur);
-          }
-        }
-        const sorted = [...merged.values()]
-          .sort((a, b) => b.초과 - a.초과)
-          .slice(0, 15);
-        setPersons(sorted);
-      });
-    }
+    api.get('/overtime/top-persons', {
+      params: {
+        from: months[0],
+        to: months[months.length - 1],
+        limit: 15,
+        ...(isAll ? {} : { depts: includedDepts.join(',') }),
+      },
+    }).then(({ data }) => {
+      if (alive) setPersons(data.data);
+    }).catch(() => {});
+
+    return () => { alive = false; };
     // months를 deps에 넣으면 기간 변경 시 effect 1(depts)이 includedDepts를 갱신하기 전에
-    // 이 effect가 old includedDepts로 한 번 더 fetch하게 되어 setPersons가 2회 호출되고
-    // recharts가 mid-animation에서 뒤 update를 무시함. includedDepts만 deps에 두어
-    // effect 1이 includedDepts를 갱신하면 그제야 1회 fetch되도록 함.
+    // 이 effect가 old includedDepts로 한 번 더 fetch하게 되어 setPersons가 2회 호출됨.
+    // includedDepts만 deps에 두어 effect 1이 includedDepts를 갱신해야 그제야 1회 fetch됨.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [includedDepts, allDepts.length]);
 
@@ -873,8 +871,8 @@ function PersonsPanel({
                 )}
                 axisLine={false} tickLine={false} interval={0}
               />
-              <YAxis yAxisId="left" stroke="transparent" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} width={36} tickCount={6} allowDecimals={false} />
-              <YAxis yAxisId="right" orientation="right" stroke="transparent" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} width={44} tickCount={6} tickFormatter={(v: number) => v.toLocaleString()} />
+              <YAxis yAxisId="left" stroke="transparent" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} width={52} tickCount={6} allowDecimals={false} tickFormatter={(v: number) => v >= 1000 ? `${+(v / 1000).toFixed(1)}k` : v.toLocaleString()} />
+              <YAxis yAxisId="right" orientation="right" stroke="transparent" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} width={52} tickCount={6} tickFormatter={(v: number) => v >= 1000 ? `${+(v / 1000).toFixed(1)}k` : v.toLocaleString()} />
               <Tooltip
                 content={({ active, payload, label }) => {
                   if (!active || !payload?.length) return null;
@@ -1108,7 +1106,7 @@ function DeptDetailModal({
             </defs>
             <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
             <XAxis dataKey="label" stroke="transparent" tick={AXIS_TICK_X} axisLine={false} tickLine={false} tickMargin={8} />
-            <YAxis stroke="transparent" tick={AXIS_TICK_Y} axisLine={false} tickLine={false} width={48} />
+            <YAxis stroke="transparent" tick={AXIS_TICK_Y} axisLine={false} tickLine={false} width={52} tickFormatter={(v: number) => v >= 1000 ? `${+(v / 1000).toFixed(1)}k` : v.toLocaleString()} />
             <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ stroke: 'rgba(255,255,255,0.08)', strokeWidth: 1 }} />
             <Area
               type="monotone" dataKey="value"

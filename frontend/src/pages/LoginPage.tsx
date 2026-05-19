@@ -47,8 +47,20 @@ export default function LoginPage() {
       setAuth(data.user);
       navigate('/dashboard', { replace: true });
     } catch (err: unknown) {
-      const status = (err as { response?: { status?: number } })?.response?.status;
-      setError(status === 401 ? '아이디 또는 비밀번호가 올바르지 않습니다.' : '로그인 중 오류가 발생했습니다.');
+      const response = (err as { response?: { status?: number; data?: { error?: string } } })?.response;
+      const status = response?.status;
+      const errCode = response?.data?.error;
+      if (status === 401) {
+        setError('아이디 또는 비밀번호가 올바르지 않습니다.');
+      } else if (status === 429) {
+        setError(
+          errCode === 'too_many_attempts'
+            ? '로그인 시도가 너무 많습니다. 15분 후 다시 시도해주세요.'
+            : '요청이 일시적으로 많아졌습니다. 잠시 후 다시 시도해주세요.'
+        );
+      } else {
+        setError('로그인 중 오류가 발생했습니다.');
+      }
     } finally {
       setLoading(false);
     }
