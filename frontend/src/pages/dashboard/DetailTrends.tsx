@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from 'react';
+import { Fragment, memo, useEffect, useMemo, useState } from 'react';
 import { Filter, Search, X } from 'lucide-react';
 import {
   Bar,
@@ -45,26 +45,62 @@ function ChartTooltip({ active, payload, label }: TooltipProps<number, string>) 
   if (!active || !payload?.length) return null;
   const amountEntry = payload.find((p) => p.dataKey === '금액');
   const barEntries = payload.filter((p) => p.dataKey !== '금액');
+  const row = payload[0]?.payload as Record<string, unknown> | undefined;
+  const hasAnyAmount = barEntries.some((p) => typeof row?.[`${String(p.dataKey)}_금액`] === 'number');
   return (
     <div style={TOOLTIP_STYLE}>
-      <div className="mb-2 text-[14px] font-semibold tracking-[0.08em] text-slate-500 uppercase">{label}</div>
-      {barEntries.map((p) => (
-        <div key={String(p.dataKey)} className="flex items-center gap-2.5 py-0.5 text-[13px]">
-          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: p.color }} />
-          <span className="text-slate-300">{p.name}</span>
-          <span className="ml-auto font-semibold tabular-nums text-white">{(p.value as number).toLocaleString()}</span>
-        </div>
-      ))}
-      {amountEntry && (
-        <>
-          <div className="my-2 border-t border-white/[0.08]" />
-          <div className="flex items-center gap-2.5 text-[13px]">
-            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: LINE_COLOR }} />
-            <span className="text-slate-300">금액(천원)</span>
-            <span className="ml-auto font-semibold tabular-nums text-amber-300">{(amountEntry.value as number).toLocaleString()}</span>
-          </div>
-        </>
-      )}
+      <div className="mb-2 text-[13px] font-semibold tracking-[0.08em] text-slate-500 uppercase">{label}</div>
+      <div
+        className="grid items-center gap-x-4 gap-y-1 text-[12.5px]"
+        style={{ gridTemplateColumns: hasAnyAmount ? 'auto 1fr auto auto' : 'auto 1fr auto' }}
+      >
+        {barEntries.map((p) => {
+          const amt = row?.[`${String(p.dataKey)}_금액`];
+          return (
+            <Fragment key={String(p.dataKey)}>
+              <span className="h-2 w-2 rounded-full" style={{ background: p.color }} />
+              <span className="truncate text-slate-300">{p.name}</span>
+              <span className="text-right tabular-nums font-semibold text-white">
+                {(p.value as number).toLocaleString()}
+                <span className="ml-0.5 text-[11px] font-normal text-slate-500">시간</span>
+              </span>
+              {hasAnyAmount && (
+                typeof amt === 'number' ? (
+                  <span className="text-right tabular-nums text-amber-300/90">
+                    {amt.toLocaleString()}
+                    <span className="ml-0.5 text-[11px] font-normal text-amber-300/60">천원</span>
+                  </span>
+                ) : <span />
+              )}
+            </Fragment>
+          );
+        })}
+      </div>
+      {amountEntry && (() => {
+        const totalHours = barEntries.reduce((s, p) => s + (typeof p.value === 'number' ? p.value : 0), 0);
+        return (
+          <>
+            <div className="my-2 border-t border-white/[0.08]" />
+            <div
+              className="grid items-center gap-x-4 text-[12.5px]"
+              style={{ gridTemplateColumns: hasAnyAmount ? 'auto 1fr auto auto' : 'auto 1fr auto' }}
+            >
+              <span className="h-2 w-2 rounded-full" style={{ background: LINE_COLOR }} />
+              <span className="text-slate-300">합계</span>
+              <span className="text-right tabular-nums font-semibold text-white">
+                {totalHours.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                <span className="ml-0.5 text-[11px] font-normal text-slate-500">시간</span>
+              </span>
+              {hasAnyAmount && (
+                <span className="text-right tabular-nums font-semibold text-amber-300">
+                  {(amountEntry.value as number).toLocaleString()}
+                  <span className="ml-0.5 text-[11px] font-normal text-amber-300/70">천원</span>
+                </span>
+              )}
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 }
@@ -179,24 +215,24 @@ function DeptTrendSection({ onSectionData }: { onSectionData?: (s: DetailSection
     const toYm = months[months.length - 1]!;
 
     let cancelled = false;
-    Promise.all([
-      Promise.all(selectedDepts.map((dept) =>
-        api.get('/overtime/dept-trend', { params: { dept, from: fromYm, to: toYm, metric } })
-          .then((r) => ({ dept, points: r.data.data as { ym: string; value: number }[] }))
-      )),
-      api.get('/overtime/amount-trend', { params: { from: fromYm, to: toYm } }),
-    ]).then(([deptResults, amtRes]) => {
+    Promise.all(selectedDepts.map((dept) =>
+      api.get('/overtime/dept-trend', { params: { dept, from: fromYm, to: toYm, metric } })
+        .then((r) => ({ dept, points: r.data.data as { ym: string; value: number; amount: number }[] }))
+    )).then((deptResults) => {
       if (cancelled) return;
-      const amtMap = new Map(
-        (amtRes.data.data as { ym: string; 총합: number }[]).map((r) => [r.ym, r.총합 ?? 0])
-      );
-      const deptMap = new Map(deptResults.map((d) => [d.dept, new Map(d.points.map((p) => [p.ym, p.value]))]));
+      const deptValueMap = new Map(deptResults.map((d) => [d.dept, new Map(d.points.map((p) => [p.ym, p.value]))]));
+      const deptAmountMap = new Map(deptResults.map((d) => [d.dept, new Map(d.points.map((p) => [p.ym, p.amount]))]));
       const rows = months.map((ym) => {
         const row: Record<string, unknown> = { month: labelYearMonth(ym) };
+        let amtSum = 0;
         for (const dept of selectedDepts) {
-          row[dept] = deptMap.get(dept)?.get(ym) ?? 0;
+          row[dept] = deptValueMap.get(dept)?.get(ym) ?? 0;
+          const a = deptAmountMap.get(dept)?.get(ym) ?? 0;
+          // 툴팁에서 카테고리별 금액 표시용 (단위: 천원)
+          row[`${dept}_금액`] = a;
+          amtSum += a;
         }
-        row['금액'] = Math.round((amtMap.get(ym) ?? 0) / 1000);
+        row['금액'] = amtSum;
         return row;
       });
       setData(rows);
@@ -306,22 +342,29 @@ function JobTrendSection({ onSectionData }: { onSectionData?: (s: DetailSectionD
     const metric = metricMap[selectedTypes[0] ?? '총연장'] ?? 'extension';
 
     let cancelled = false;
-    Promise.all([
-      api.get('/overtime/job-trend', { params: { from: months[0], to: months[months.length - 1], metric } }),
-      api.get('/overtime/amount-trend', { params: { from: months[0], to: months[months.length - 1] } }),
-    ])
-      .then(([jobRes, amtRes]) => {
+    api.get('/overtime/job-trend', { params: { from: months[0], to: months[months.length - 1], metric } })
+      .then((jobRes) => {
         if (cancelled) return;
         const res = jobRes.data;
         setAvailableJobs(res.jobGroups);
-        const amtMap = new Map<string, number>(
-          (amtRes.data.data as { ym: string; 총합: number }[]).map((r) => [r.ym, r.총합 ?? 0])
+        const amountsByYm = new Map<string, Record<string, number>>(
+          (res.amounts as Record<string, unknown>[]).map((r) => [r.ym as string, r as unknown as Record<string, number>])
         );
-        const mapped = res.data.map((row: Record<string, unknown>) => ({
-          month: labelYearMonth(row.ym as string),
-          ...Object.fromEntries(selectedCats.map((c) => [c, row[c] ?? 0])),
-          금액: Math.round((amtMap.get(row.ym as string) ?? 0) / 1000),
-        }));
+        const mapped = res.data.map((row: Record<string, unknown>) => {
+          const ym = row.ym as string;
+          const amtRow = amountsByYm.get(ym) ?? {};
+          const result: Record<string, unknown> = { month: labelYearMonth(ym) };
+          let amtSum = 0;
+          for (const c of selectedCats) {
+            result[c] = row[c] ?? 0;
+            const a = (amtRow[c] as number) ?? 0;
+            // 툴팁에서 카테고리별 금액 표시용 (단위: 천원)
+            result[`${c}_금액`] = a;
+            amtSum += a;
+          }
+          result['금액'] = amtSum;
+          return result;
+        });
         setData(mapped);
         setDataVersion((v) => v + 1);
         const rangeLabel = months.length > 0 ? (months[0] === months[months.length-1] ? months[0] : `${months[0]} ~ ${months[months.length-1]}`) : '';
@@ -428,24 +471,24 @@ useEffect(() => {
     const toYm = months[months.length - 1]!;
 
     let cancelled = false;
-    Promise.all([
-      Promise.all(selectedPersons.map((p) =>
-        api.get('/overtime/person-trend', { params: { empNo: p.empNo, from: fromYm, to: toYm, metric } })
-          .then((r) => ({ name: p.name, points: r.data.data as { ym: string; value: number }[] }))
-      )),
-      api.get('/overtime/amount-trend', { params: { from: fromYm, to: toYm } }),
-    ]).then(([personResults, amtRes]) => {
+    Promise.all(selectedPersons.map((p) =>
+      api.get('/overtime/person-trend', { params: { empNo: p.empNo, from: fromYm, to: toYm, metric } })
+        .then((r) => ({ name: p.name, points: r.data.data as { ym: string; value: number; amount: number }[] }))
+    )).then((personResults) => {
       if (cancelled) return;
-      const amtMap = new Map(
-        (amtRes.data.data as { ym: string; 총합: number }[]).map((r) => [r.ym, r.총합 ?? 0])
-      );
-      const personMap = new Map(personResults.map((d) => [d.name, new Map(d.points.map((p) => [p.ym, p.value]))]));
+      const personValueMap = new Map(personResults.map((d) => [d.name, new Map(d.points.map((p) => [p.ym, p.value]))]));
+      const personAmountMap = new Map(personResults.map((d) => [d.name, new Map(d.points.map((p) => [p.ym, p.amount]))]));
       const rows = months.map((ym) => {
         const row: Record<string, unknown> = { month: labelYearMonth(ym) };
+        let amtSum = 0;
         for (const p of selectedPersons) {
-          row[p.name] = personMap.get(p.name)?.get(ym) ?? 0;
+          row[p.name] = personValueMap.get(p.name)?.get(ym) ?? 0;
+          const a = personAmountMap.get(p.name)?.get(ym) ?? 0;
+          // 툴팁에서 카테고리별 금액 표시용 (단위: 천원)
+          row[`${p.name}_금액`] = a;
+          amtSum += a;
         }
-        row['금액'] = Math.round((amtMap.get(ym) ?? 0) / 1000);
+        row['금액'] = amtSum;
         return row;
       });
       setData(rows);

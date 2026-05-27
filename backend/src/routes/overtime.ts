@@ -72,7 +72,8 @@ router.get('/kpis', async (req, res) => {
   const excessAmount = records.reduce((s, r) => s + (r.excessAmount ?? 0), 0);
   const totalAmount = records.reduce((s, r) => s + (r.totalAllowance ?? 0), 0);
   const uniquePersons = new Set(records.map(r => r.empNo)).size;
-  const avgPerPerson = uniquePersons > 0 ? totalHours / uniquePersons : 0;
+  // 월평균 1인 시간 — 다개월 기간 선택 시에도 단위가 일관되도록 개월수로 나눈다.
+  const avgPerPerson = uniquePersons > 0 ? totalHours / uniquePersons / months.length : 0;
 
   res.json({ totalHours, totalAmount, excessHours, excessAmount, avgPerPerson });
 });
@@ -215,14 +216,23 @@ router.get('/dept-trend', async (req, res) => {
   const result = await Promise.all(months.map(async (ym) => {
     const recs = await prisma.overtimeRecord.findMany({
       where: { yearMonth: ym, department: dept },
-      select: { autoHours: true, excessHours: true, extensionHours: true },
+      select: {
+        autoHours: true, excessHours: true, extensionHours: true,
+        autoAmount: true, excessAmount: true, totalAllowance: true,
+      },
     });
     const value = recs.reduce((s, r) => s + ((
       metric === 'auto' ? r.autoHours :
       metric === 'excess' ? r.excessHours :
       r.extensionHours
     ) ?? 0), 0);
-    return { ym, value };
+    // 금액 라인이 선택된 metric / 부서와 동일 모집단을 보도록 함께 반환 (단위: 천원)
+    const amount = recs.reduce((s, r) => s + ((
+      metric === 'auto' ? r.autoAmount :
+      metric === 'excess' ? r.excessAmount :
+      r.totalAllowance
+    ) ?? 0), 0);
+    return { ym, value, amount: Math.round(amount / 1000) };
   }));
 
   res.json({ data: result });
@@ -248,11 +258,16 @@ router.get('/job-trend', async (req, res) => {
   const result = await Promise.all(months.map(async (ym) => {
     const recs = await prisma.overtimeRecord.findMany({
       where: { yearMonth: ym },
-      select: { empNo: true, autoHours: true, excessHours: true, extensionHours: true },
+      select: {
+        empNo: true,
+        autoHours: true, excessHours: true, extensionHours: true,
+        autoAmount: true, excessAmount: true, totalAllowance: true,
+      },
     });
 
     const row: Record<string, number | string> = { ym };
-    for (const jg of jobGroups) row[jg] = 0;
+    const amountRow: Record<string, number | string> = { ym };
+    for (const jg of jobGroups) { row[jg] = 0; amountRow[jg] = 0; }
 
     for (const r of recs) {
       const jg = empJobMap.get(r.empNo);
@@ -260,12 +275,22 @@ router.get('/job-trend', async (req, res) => {
       const v = metric === 'auto' ? (r.autoHours ?? 0)
               : metric === 'excess' ? (r.excessHours ?? 0)
               : (r.extensionHours ?? 0);
+      const a = metric === 'auto' ? (r.autoAmount ?? 0)
+              : metric === 'excess' ? (r.excessAmount ?? 0)
+              : (r.totalAllowance ?? 0);
       (row[jg] as number) += v;
+      (amountRow[jg] as number) += a;
     }
-    return row;
+    // 금액은 천원 단위로 반환
+    for (const jg of jobGroups) amountRow[jg] = Math.round((amountRow[jg] as number) / 1000);
+    return { row, amountRow };
   }));
 
-  res.json({ data: result, jobGroups });
+  res.json({
+    data: result.map(r => r.row),
+    amounts: result.map(r => r.amountRow),
+    jobGroups,
+  });
 });
 
 // ──────────────────────────────────────────────
@@ -285,16 +310,24 @@ router.get('/person-trend', async (req, res) => {
   const result = await Promise.all(months.map(async (ym) => {
     const rec = await prisma.overtimeRecord.findUnique({
       where: { yearMonth_empNo: { yearMonth: ym, empNo } },
-      select: { autoHours: true, excessHours: true, extensionHours: true, totalAllowance: true },
+      select: {
+        autoHours: true, excessHours: true, extensionHours: true,
+        autoAmount: true, excessAmount: true, totalAllowance: true,
+      },
     });
     const value =
       metric === 'auto' ? (rec?.autoHours ?? 0) :
       metric === 'excess' ? (rec?.excessHours ?? 0) :
       (rec?.extensionHours ?? 0);
+    // 금액도 metric에 맞춰 반환 — 막대(시간)와 라인(금액)이 동일 모집단을 표시하도록.
+    const amount =
+      metric === 'auto' ? (rec?.autoAmount ?? 0) :
+      metric === 'excess' ? (rec?.excessAmount ?? 0) :
+      (rec?.totalAllowance ?? 0);
     return {
       ym,
       value,
-      amount: Math.round((rec?.totalAllowance ?? 0) / 1000),
+      amount: Math.round(amount / 1000),
     };
   }));
 

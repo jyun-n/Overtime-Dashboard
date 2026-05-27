@@ -296,7 +296,7 @@ type OverviewDataPayload = {
   persons: { name: string; dept: string; 초과: number; 초과연장금액: number }[];
 };
 
-export default function MainOverview({ range, jobFilter, onDataReady }: { range: DateRange; jobFilter: string | null; onDataReady?: (data: OverviewDataPayload) => void }) {
+export default function MainOverview({ range, jobFilter, rangeMode = 'monthly', onDataReady }: { range: DateRange; jobFilter: string | null; rangeMode?: 'monthly' | 'range'; onDataReady?: (data: OverviewDataPayload) => void }) {
   useEffect(() => {
     const id = 'kpi-keyframes';
     if (document.getElementById(id)) return;
@@ -346,9 +346,8 @@ export default function MainOverview({ range, jobFilter, onDataReady }: { range:
     return () => clearTimeout(t);
   }, []);
 
-  // 초기 진입 여부: range가 기본값(전달 단일월)과 같으면 전월 대비 표시
-  const defaultYm = todayPrevMonthYm();
-  const isDefaultRange = range.from === defaultYm && range.to === defaultYm;
+  // 월간 모드일 때만 전월 대비 표시 (선택된 월의 직전월과 비교)
+  const isMonthly = rangeMode === 'monthly';
 
   const fetchKpis = useCallback(async () => {
     try {
@@ -357,9 +356,10 @@ export default function MainOverview({ range, jobFilter, onDataReady }: { range:
       });
 
       let pct: (cur: number, pre: number) => number | null = () => null;
-      if (isDefaultRange) {
-        // 초기 진입 시에만 전월 대비 계산
-        const prevYm = ymBefore(defaultYm, 1);
+      if (isMonthly) {
+        // 월간 모드: 선택된 월의 직전월과 비교
+        const selectedYm = range.to;
+        const prevYm = ymBefore(selectedYm, 1);
         const prev = await api.get('/overtime/kpis', {
           params: { from: prevYm, to: prevYm, ...(jobFilter ? { jobGroup: jobFilter } : {}) },
         });
@@ -376,7 +376,7 @@ export default function MainOverview({ range, jobFilter, onDataReady }: { range:
           { label: '인당 평균', value: c.avgPerPerson.toFixed(1), raw: c.avgPerPerson, unit: '시간/명', delta: pct(c.avgPerPerson, p.avgPerPerson) },
         ]);
       } else {
-        // 기간 변경 시: 전월 대비 없이 합산 표시
+        // 기간 모드: 전월 대비 없이 합산 표시
         const c = data;
         const exAmt = c.excessAmount ?? 0;
         setKpis([
@@ -388,7 +388,7 @@ export default function MainOverview({ range, jobFilter, onDataReady }: { range:
         ]);
       }
     } catch { /* 에러 무시 */ }
-  }, [range.from, range.to, jobFilter, isDefaultRange, defaultYm]);
+  }, [range.from, range.to, jobFilter, isMonthly]);
 
   const fetchChartData = useCallback(async () => {
     if (chartMonths.length === 0) return;
@@ -612,7 +612,6 @@ export default function MainOverview({ range, jobFilter, onDataReady }: { range:
 
 function HoursTooltip({ active, payload, label }: TooltipProps<number, string>) {
   if (!active || !payload?.length) return null;
-  const total = payload.reduce((s, p) => s + (typeof p.value === 'number' ? p.value : 0), 0);
   return (
     <div style={TOOLTIP_STYLE} className="px-3.5 py-3">
       <div className="mb-2 text-[12px] font-semibold tracking-[0.06em] text-slate-400 uppercase">{label}</div>
@@ -623,17 +622,12 @@ function HoursTooltip({ active, payload, label }: TooltipProps<number, string>) 
           <span className="ml-auto font-semibold text-white">{(p.value as number).toLocaleString()}</span>
         </div>
       ))}
-      <div className="mt-2 border-t border-white/10 pt-2 text-[13px]">
-        <span className="text-slate-400">총합</span>
-        <span className="ml-3 font-semibold text-rose-300">{total.toLocaleString()} 시간</span>
-      </div>
     </div>
   );
 }
 
 function AmountTooltip({ active, payload, label }: TooltipProps<number, string>) {
   if (!active || !payload?.length) return null;
-  const total = payload.reduce((s, p) => s + (typeof p.value === 'number' ? p.value : 0), 0);
   return (
     <div style={TOOLTIP_STYLE} className="px-3.5 py-3">
       <div className="mb-2 text-[12px] font-semibold tracking-[0.06em] text-slate-400 uppercase">{label}</div>
@@ -644,10 +638,6 @@ function AmountTooltip({ active, payload, label }: TooltipProps<number, string>)
           <span className="ml-auto font-semibold text-white">{(p.value as number).toFixed(1)}</span>
         </div>
       ))}
-      <div className="mt-2 border-t border-white/10 pt-2 text-[13px]">
-        <span className="text-slate-400">총합</span>
-        <span className="ml-3 font-semibold text-rose-300">{total.toFixed(1)} 천만원</span>
-      </div>
     </div>
   );
 }
@@ -1333,6 +1323,147 @@ export function RangePicker({
       <MonthPicker value={range.from} onChange={(v) => onChange(clamp(v, range.to))} />
       <span className="text-slate-500">~</span>
       <MonthPicker value={range.to} onChange={(v) => onChange(clamp(range.from, v))} />
+    </div>
+  );
+}
+
+export type RangeMode = 'monthly' | 'range';
+
+export function formatYm(ym: string): string {
+  const [y, m] = ym.split('-');
+  return `${y}. ${Number(m)}월`;
+}
+
+// 팝오버 내부에서만 쓰이는 12개월 그리드 (외곽 chrome 없음 — wrapper가 입힘)
+function MonthGridInner({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const valYear = parseInt(value.split('-')[0], 10);
+  const valMonth = parseInt(value.split('-')[1], 10);
+  const [navYear, setNavYear] = useState(valYear);
+  useEffect(() => { setNavYear(valYear); }, [valYear]);
+
+  return (
+    <div className="w-[212px]">
+      <div className="mb-2.5 flex items-center justify-between">
+        <button type="button" onClick={() => setNavYear((y) => y - 1)} className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-white/10 hover:text-white">
+          <ChevronLeft size={15} />
+        </button>
+        <span className="text-[13px] font-semibold text-white tabular-nums">{navYear}</span>
+        <button type="button" onClick={() => setNavYear((y) => y + 1)} className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-white/10 hover:text-white">
+          <ChevronRight size={15} />
+        </button>
+      </div>
+      <div className="grid grid-cols-3 gap-1">
+        {KOREAN_MONTHS.map((label, idx) => {
+          const m = idx + 1;
+          const isSelected = navYear === valYear && m === valMonth;
+          return (
+            <button
+              key={m}
+              type="button"
+              onClick={() => onChange(`${navYear}-${String(m).padStart(2, '0')}`)}
+              className={`rounded-lg py-2 text-[12px] font-medium transition ${
+                isSelected
+                  ? 'bg-gradient-to-r from-blue-600 to-sky-500 text-white shadow-[0_4px_12px_rgba(37,99,235,0.3)]'
+                  : 'text-slate-400 hover:bg-white/[0.08] hover:text-white'
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export function ModeRangePicker({
+  mode, onModeChange, range, onChange,
+}: {
+  mode: RangeMode;
+  onModeChange: (m: RangeMode) => void;
+  range: DateRange;
+  onChange: (r: DateRange) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  // 기간 모드에서는 팝오버를 적용 버튼으로 닫기 전까지 임시 값을 유지
+  const [draftRange, setDraftRange] = useState<DateRange>(range);
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [open]);
+
+  useEffect(() => { setDraftRange(range); }, [range, open]);
+
+  function clamp(from: string, to: string): DateRange {
+    return from <= to ? { from, to } : { from: to, to: from };
+  }
+
+  function handleModeClick(next: RangeMode) {
+    if (next === 'monthly' && range.from !== range.to) {
+      // 기간 → 월간: 종료월 기준 단일월로 수렴
+      onChange({ from: range.to, to: range.to });
+    }
+    if (next !== mode) onModeChange(next);
+    // 같은 버튼 다시 누르면 토글, 다른 버튼이면 항상 열기
+    setOpen((cur) => (next === mode ? !cur : true));
+  }
+
+  return (
+    <div ref={wrapRef} className="relative flex items-center gap-3 text-[13px] text-slate-300">
+      <div className="inline-flex rounded-2xl border border-white/10 bg-white/[0.03] p-1">
+        {(['monthly', 'range'] as RangeMode[]).map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => handleModeClick(m)}
+            className={`rounded-xl px-3.5 py-1.5 text-[12px] font-semibold transition ${
+              mode === m
+                ? 'bg-gradient-to-r from-blue-600 to-sky-500 text-white shadow-[0_8px_20px_rgba(37,99,235,0.28)]'
+                : 'text-slate-300 hover:text-white'
+            }`}
+          >
+            {m === 'monthly' ? '월간' : '기간'}
+          </button>
+        ))}
+      </div>
+      {open && (
+        <div
+          className="absolute right-0 top-[calc(100%+8px)] z-50 animate-[modalIn_0.16s_ease-out] rounded-[16px] border border-white/10 bg-[#0b1728] p-4 shadow-[0_16px_48px_rgba(0,0,0,0.55)]"
+        >
+          {mode === 'monthly' ? (
+            <MonthGridInner
+              value={range.to}
+              onChange={(v) => { onChange({ from: v, to: v }); setOpen(false); }}
+            />
+          ) : (
+            <div>
+              <div className="flex gap-4">
+                <div>
+                  <div className="mb-2 text-center text-[11px] font-semibold tracking-[0.14em] text-slate-400 uppercase">시작월</div>
+                  <MonthGridInner value={draftRange.from} onChange={(v) => setDraftRange((d) => ({ ...d, from: v }))} />
+                </div>
+                <div className="w-px self-stretch bg-white/[0.06]" />
+                <div>
+                  <div className="mb-2 text-center text-[11px] font-semibold tracking-[0.14em] text-slate-400 uppercase">종료월</div>
+                  <MonthGridInner value={draftRange.to} onChange={(v) => setDraftRange((d) => ({ ...d, to: v }))} />
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { onChange(clamp(draftRange.from, draftRange.to)); setOpen(false); }}
+                className="mt-4 w-full rounded-xl bg-gradient-to-r from-blue-600 to-sky-500 py-2.5 text-[13px] font-semibold text-white shadow-[0_8px_24px_rgba(37,99,235,0.28)] transition hover:brightness-110"
+              >
+                적용
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

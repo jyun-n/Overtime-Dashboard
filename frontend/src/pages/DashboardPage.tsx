@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuthStore } from '../lib/store';
-import MainOverview, { JobFilterSelect, RangePicker, type DateRange } from './dashboard/MainOverview';
+import MainOverview, { JobFilterSelect, ModeRangePicker, formatYm, type DateRange, type RangeMode } from './dashboard/MainOverview';
 import { DetailDownloadButton, OverviewDownloadButton, type DetailSectionData } from './dashboard/ReportDownload';
 import type { Kpi } from './dashboard/MainOverview';
 import DetailTrends from './dashboard/DetailTrends';
@@ -32,6 +32,7 @@ export default function DashboardPage() {
   const [overtimeAt, setOvertimeAt] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('overview');
   const [range, setRange] = useState<DateRange>(defaultRange());
+  const [rangeMode, setRangeMode] = useState<RangeMode>('monthly');
   const [jobFilter, setJobFilter] = useState<string | null>(null);
 
   const navigate = useNavigate();
@@ -138,9 +139,17 @@ export default function DashboardPage() {
             )}
           </div>
           {tab === 'overview' && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
+              <span className="flex items-baseline gap-1.5 whitespace-nowrap">
+                <span className="text-[11px] font-semibold tracking-[0.12em] text-sky-300/70 uppercase">조회기간</span>
+                <span className="text-[13px] font-semibold tabular-nums text-white">
+                  {rangeMode === 'monthly'
+                    ? formatYm(range.to)
+                    : `${formatYm(range.from)} ~ ${formatYm(range.to)}`}
+                </span>
+              </span>
               <JobFilterSelect value={jobFilter} onChange={setJobFilter} />
-              <RangePicker range={range} onChange={setRange} />
+              <ModeRangePicker mode={rangeMode} onModeChange={setRangeMode} range={range} onChange={setRange} />
             </div>
           )}
         </div>
@@ -149,7 +158,7 @@ export default function DashboardPage() {
       {/* 두 탭 컴포넌트를 항상 마운트하고 display로 토글 — unmount/mount로 인한
           fetch race condition 방지 (탭을 빠르게 왔다갔다 할 때 데이터 누락 방지) */}
       <div style={{ display: tab === 'overview' ? 'block' : 'none' }}>
-        <MainOverview range={range} jobFilter={jobFilter} onDataReady={setOverviewData} />
+        <MainOverview range={range} jobFilter={jobFilter} rangeMode={rangeMode} onDataReady={setOverviewData} />
       </div>
       <div style={{ display: tab === 'detail' ? 'block' : 'none' }} ref={detailRef}>
         <DetailTrends onSectionsChange={setDetailSections} />
