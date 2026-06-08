@@ -13,6 +13,7 @@ import uploadStatusRouter from './routes/uploadStatus.js';
 import loginLogsRouter from './routes/loginLogs.js';
 import uploadRouter from './routes/upload.js';
 import overtimeRouter from './routes/overtime.js';
+import ipAclRouter from './routes/ipAcl.js';
 
 const app = express();
 
@@ -55,6 +56,7 @@ app.use('/api/upload-status', uploadStatusRouter);
 app.use('/api/login-logs', loginLogsRouter);
 app.use('/api/upload', uploadRouter);
 app.use('/api/overtime', overtimeRouter);
+app.use('/api/ip-acl', ipAclRouter);
 
 app.listen(env.port, env.host, () => {
   logger.info(`API listening on http://${env.host}:${env.port} (${env.nodeEnv})`);

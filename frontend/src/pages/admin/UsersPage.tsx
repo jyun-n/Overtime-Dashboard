@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../../lib/api';
+import IpAclPanel from './IpAclPanel';
 import {
   CheckCircle2,
   ChevronLeft,
@@ -88,7 +89,7 @@ type LoginLog = {
   ip: string;
 };
 
-type AuditAction = 'EDIT_INFO' | 'EDIT_ROLE' | 'DELETE' | 'CREATE' | 'RESET_PW';
+type AuditAction = 'EDIT_INFO' | 'EDIT_ROLE' | 'DELETE' | 'CREATE' | 'RESET_PW' | 'IPACL_ADD' | 'IPACL_REMOVE' | 'IPACL_TOGGLE';
 type AuditLog = {
   id: string;
   at: string;
@@ -101,7 +102,7 @@ type AuditLog = {
 };
 
 export default function UsersPage() {
-  const [activeTab, setActiveTab] = useState<'manage' | 'create'>('manage');
+  const [activeTab, setActiveTab] = useState<'manage' | 'create' | 'ipacl'>('manage');
   const [accounts, setAccounts] = useState<Account[]>([]);
 
   const [resetOpen, setResetOpen] = useState(false);
@@ -110,13 +111,16 @@ export default function UsersPage() {
 
   const [newPassword, setNewPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showMasterPassword, setShowMasterPassword] = useState(false);
+  const [resetConfirmPw, setResetConfirmPw] = useState('');
+  const [showResetConfirmPw, setShowResetConfirmPw] = useState(false);
   const [deleteSecret, setDeleteSecret] = useState('');
   const [showDeleteSecret, setShowDeleteSecret] = useState(false);
   const [modalError, setModalError] = useState('');
 
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState<{ department: string; jobGroup: string; name: string; role: AccountRole }>({ department: '', jobGroup: '', name: '', role: 'USER' });
+  const [editPassword, setEditPassword] = useState('');
+  const [showEditPassword, setShowEditPassword] = useState(false);
 
   const [createForm, setCreateForm] = useState<CreateForm>(EMPTY_FORM);
   const [showCreatePassword, setShowCreatePassword] = useState(false);
@@ -154,6 +158,8 @@ export default function UsersPage() {
   function openEdit(a: Account) {
     setSelected(a);
     setEditForm({ department: a.department ?? '', jobGroup: a.jobGroup ?? '', name: a.name, role: a.role });
+    setEditPassword('');
+    setShowEditPassword(false);
     setModalError('');
     setEditOpen(true);
   }
@@ -163,11 +169,13 @@ export default function UsersPage() {
       setModalError('소속부서와 직급을 입력해주세요.');
       return;
     }
+    if (!editPassword) { setModalError('본인 비밀번호를 입력해주세요.'); return; }
     try {
       await api.patch(`/users/${selected!.id}`, {
         role: editForm.role,
         department: editForm.department,
         jobGroup: editForm.jobGroup,
+        password: editPassword,
       });
       await loadAccounts();
       setEditOpen(false);
@@ -175,7 +183,9 @@ export default function UsersPage() {
       setToast('정보가 수정되었습니다.');
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setModalError(msg === 'cannot_modify_root_admin' ? 'admin 계정은 수정할 수 없습니다.' : '수정에 실패했습니다.');
+      if (msg === 'invalid_password') setModalError('본인 비밀번호가 올바르지 않습니다.');
+      else if (msg === 'cannot_modify_root_admin') setModalError('admin 계정은 수정할 수 없습니다.');
+      else setModalError('수정에 실패했습니다.');
     }
   }
 
@@ -183,7 +193,8 @@ export default function UsersPage() {
     setSelected(a);
     setNewPassword('');
     setShowNewPassword(false);
-    setShowMasterPassword(false);
+    setResetConfirmPw('');
+    setShowResetConfirmPw(false);
     setModalError('');
     setResetOpen(true);
   }
@@ -200,34 +211,36 @@ export default function UsersPage() {
     if (!newPassword.trim()) { setModalError('새 비밀번호를 입력해주세요.'); return; }
     const pwErr = validatePassword(newPassword);
     if (pwErr) { setModalError(pwErr); return; }
+    const isAdminTarget = selected?.username === 'admin';
+    if (!resetConfirmPw) { setModalError(isAdminTarget ? '마스터 비밀번호를 입력해주세요.' : '본인 비밀번호를 입력해주세요.'); return; }
     try {
-      const masterPassword = selected?.username === 'admin'
-        ? (document.getElementById('master-pw') as HTMLInputElement)?.value
-        : undefined;
-      await api.post(`/users/${selected!.id}/reset-password`, { newPassword, masterPassword });
+      await api.post(`/users/${selected!.id}/reset-password`, { newPassword, password: resetConfirmPw });
       setResetOpen(false);
       setSelected(null);
       setToast('비밀번호가 재설정되었습니다.');
     } catch (err: unknown) {
       const resp = (err as { response?: { data?: { error?: string; reason?: string } } })?.response?.data;
       if (resp?.error === 'master_password_required') setModalError('마스터 비밀번호가 올바르지 않습니다.');
+      else if (resp?.error === 'invalid_password') setModalError('본인 비밀번호가 올바르지 않습니다.');
       else if (resp?.error === 'weak_password') setModalError(mapPasswordError(resp.reason));
       else setModalError('비밀번호 재설정에 실패했습니다.');
     }
   }
 
   async function handleDelete() {
-    if (!deleteSecret.trim()) { setModalError('탈퇴 비밀번호를 입력해주세요.'); return; }
+    if (!deleteSecret.trim()) { setModalError('본인 비밀번호를 입력해주세요.'); return; }
     if (selected?.role === 'ADMIN') { setModalError('관리자 계정은 탈퇴 처리할 수 없습니다.'); return; }
     try {
-      await api.delete(`/users/${selected!.id}`);
+      await api.delete(`/users/${selected!.id}`, { data: { password: deleteSecret } });
       await loadAccounts();
       setDeleteOpen(false);
       setSelected(null);
       setToast('계정이 탈퇴 처리되었습니다.');
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setModalError(msg === 'cannot_delete_admin' ? '관리자 계정은 탈퇴 처리할 수 없습니다.' : '탈퇴 처리에 실패했습니다.');
+      if (msg === 'invalid_password') setModalError('본인 비밀번호가 올바르지 않습니다.');
+      else if (msg === 'cannot_delete_admin') setModalError('관리자 계정은 탈퇴 처리할 수 없습니다.');
+      else setModalError('탈퇴 처리에 실패했습니다.');
     }
   }
 
@@ -318,12 +331,15 @@ export default function UsersPage() {
         <div className="mb-6 inline-flex rounded-2xl border border-white/10 bg-white/[0.03] p-1">
           <TabButton active={activeTab === 'manage'} onClick={() => setActiveTab('manage')}>계정 관리</TabButton>
           <TabButton active={activeTab === 'create'} onClick={() => setActiveTab('create')}>계정 생성</TabButton>
+          <TabButton active={activeTab === 'ipacl'} onClick={() => setActiveTab('ipacl')}>IP 접근 제어</TabButton>
         </div>
 
         {activeTab === 'manage' ? (
           <ManageTable accounts={accounts} onReset={openReset} onDelete={openDelete} onEdit={openEdit} onViewLogs={openLoginLogs} />
-        ) : (
+        ) : activeTab === 'create' ? (
           <CreateForm form={createForm} showPassword={showCreatePassword} onTogglePassword={() => setShowCreatePassword((p) => !p)} error={createError} onChange={changeForm} onSubmit={handleCreate} />
+        ) : (
+          <IpAclPanel />
         )}
       </div>
 
@@ -365,6 +381,17 @@ export default function UsersPage() {
               </div>
             </div>
           </div>
+          <div className="mt-3">
+            <label className="mb-1.5 block text-[11px] font-semibold tracking-[0.08em] text-slate-400 uppercase">본인 비밀번호 확인</label>
+            <div className="relative">
+              <input type={showEditPassword ? 'text' : 'password'} value={editPassword} onChange={(e) => { setEditPassword(e.target.value); setModalError(''); }} placeholder="본인(관리자) 비밀번호 입력"
+                className="h-[48px] w-full rounded-[14px] border border-white/10 bg-white/[0.04] px-4 pr-12 text-[14px] text-white outline-none transition placeholder:text-slate-600 focus:border-sky-500/50 focus:bg-white/[0.06]" />
+              <button type="button" onClick={() => setShowEditPassword((p) => !p)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 transition hover:text-sky-300">
+                {showEditPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+          </div>
           {modalError && <p className="mt-3 text-sm text-rose-400">{modalError}</p>}
           <div className="mt-6 flex justify-end gap-3">
             <ModalCancelButton onClick={() => setEditOpen(false)}>취소</ModalCancelButton>
@@ -378,19 +405,20 @@ export default function UsersPage() {
           <p className="mb-4 text-sm leading-relaxed text-slate-300">
             <span className="font-semibold text-white">{selected.name}</span> ({selected.username}) 계정의 새 비밀번호를 입력하세요.
           </p>
-          {selected.username === 'admin' && (
-            <div className="mb-3">
-              <label className="mb-1.5 block text-[11px] font-semibold tracking-[0.08em] text-slate-400 uppercase">마스터 비밀번호 확인</label>
-              <div className="relative">
-                <input type={showMasterPassword ? 'text' : 'password'} id="master-pw" placeholder="마스터 비밀번호 입력"
-                  className="h-[48px] w-full rounded-[14px] border border-white/10 bg-white/[0.04] px-4 pr-12 text-[14px] text-white outline-none transition placeholder:text-slate-600 focus:border-amber-500/50 focus:bg-white/[0.06]" />
-                <button type="button" onClick={() => setShowMasterPassword((p) => !p)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 transition hover:text-amber-300">
-                  {showMasterPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </div>
+          <div className="mb-3">
+            <label className="mb-1.5 block text-[11px] font-semibold tracking-[0.08em] text-slate-400 uppercase">
+              {selected.username === 'admin' ? '마스터 비밀번호 확인' : '본인 비밀번호 확인'}
+            </label>
+            <div className="relative">
+              <input type={showResetConfirmPw ? 'text' : 'password'} value={resetConfirmPw} onChange={(e) => { setResetConfirmPw(e.target.value); setModalError(''); }}
+                placeholder={selected.username === 'admin' ? '마스터 비밀번호 입력' : '본인(관리자) 비밀번호 입력'}
+                className="h-[48px] w-full rounded-[14px] border border-white/10 bg-white/[0.04] px-4 pr-12 text-[14px] text-white outline-none transition placeholder:text-slate-600 focus:border-amber-500/50 focus:bg-white/[0.06]" />
+              <button type="button" onClick={() => setShowResetConfirmPw((p) => !p)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 transition hover:text-amber-300">
+                {showResetConfirmPw ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
             </div>
-          )}
+          </div>
           <div>
             <label className="mb-1.5 block text-[11px] font-semibold tracking-[0.08em] text-slate-400 uppercase">새 비밀번호</label>
             <div className="relative">
@@ -414,10 +442,10 @@ export default function UsersPage() {
       {deleteOpen && selected && (
         <Modal title="계정 탈퇴" onClose={() => setDeleteOpen(false)}>
           <p className="mb-4 text-sm leading-relaxed text-slate-300">
-            <span className="font-semibold text-white">{selected.name}</span> ({selected.username}) 계정을 탈퇴 처리하려면 탈퇴 비밀번호를 입력하세요.
+            <span className="font-semibold text-white">{selected.name}</span> ({selected.username}) 계정을 탈퇴 처리하려면 본인(관리자) 비밀번호를 입력하세요.
           </p>
           <div className="relative">
-            <input type={showDeleteSecret ? 'text' : 'password'} value={deleteSecret} onChange={(e) => setDeleteSecret(e.target.value)} placeholder="탈퇴 비밀번호 입력"
+            <input type={showDeleteSecret ? 'text' : 'password'} value={deleteSecret} onChange={(e) => { setDeleteSecret(e.target.value); setModalError(''); }} placeholder="본인 비밀번호 입력"
               className="h-[54px] w-full rounded-[16px] border border-white/10 bg-white/[0.04] px-4 pr-12 text-[14px] text-white outline-none transition duration-200 placeholder:text-slate-600 focus:border-sky-500/50 focus:bg-white/[0.06]" />
             <button type="button" onClick={() => setShowDeleteSecret((p) => !p)}
               className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 transition hover:text-sky-300">

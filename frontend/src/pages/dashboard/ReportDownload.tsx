@@ -69,15 +69,13 @@ export interface OverviewReportProps {
   topDeptsAuto: { name: string; value: number }[];
   topDeptsExcess: { name: string; value: number }[];
   persons: { name: string; dept: string; 초과: number; 초과연장금액: number }[];
-  userName: string;
 }
 
-function OverviewReport({ range, jobFilter, kpis, hours, amount, topDeptsAuto, topDeptsExcess, persons, userName }: OverviewReportProps) {
+function OverviewReport({ range, jobFilter, kpis, hours, amount, topDeptsAuto, topDeptsExcess, persons }: OverviewReportProps) {
   const rangeLabel = range.from === range.to ? range.from : `${range.from} ~ ${range.to}`;
   const filterLabel = jobFilter ? ` · ${jobFilter}` : '';
   const maxAutoVal = Math.max(...topDeptsAuto.map(d => d.value), 1);
   const maxExcessVal = Math.max(...topDeptsExcess.map(d => d.value), 1);
-  const maxPersonVal = Math.max(...persons.map(p => p.초과), 1);
   const filteredHours = hours.filter(r => ((r.총연장 as number) ?? 0) > 0);
   const filteredAmount = amount.filter(r => ((r.총합 as number) ?? 0) > 0);
 
@@ -88,10 +86,6 @@ function OverviewReport({ range, jobFilter, kpis, hours, amount, topDeptsAuto, t
         <div>
           <div style={{ fontSize: '23px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.03em' }}>연장근무 현황 보고서</div>
           <div style={{ fontSize: '15px', color: '#64748b', marginTop: '2px' }}>{rangeLabel}{filterLabel} 기준</div>
-        </div>
-        <div style={{ textAlign: 'right', fontSize: '13px', color: '#94a3b8', lineHeight: 1.8 }}>
-          <div>생성일시: {fmtNow()}</div>
-          <div>작성자: {userName}</div>
         </div>
       </div>
 
@@ -247,24 +241,19 @@ function OverviewReport({ range, jobFilter, kpis, hours, amount, topDeptsAuto, t
 
       {/* 푸터 */}
       <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94a3b8' }}>
-        <div>※ 본 보고서는 연장근무 관리 시스템에서 자동 생성되었습니다.</div>
         <div>{rangeLabel} 기준 · {fmtNow()} 출력</div>
       </div>
     </div>
   );
 }
 
-function DetailReport({ sections, userName }: { sections: DetailSectionData[]; userName: string }) {
+function DetailReport({ sections }: { sections: DetailSectionData[] }) {
   return (
     <div style={{ background: '#fff', fontFamily: "'Malgun Gothic','맑은 고딕',sans-serif", color: '#1e293b', padding: '28px 36px', width: '1123px', boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '2.5px solid #0ea5e9', paddingBottom: '14px', marginBottom: '18px' }}>
         <div>
           <div style={{ fontSize: '23px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.03em' }}>연장근무 상세 보고서</div>
           <div style={{ fontSize: '15px', color: '#64748b', marginTop: '2px' }}>부서별 · 직군별 · 개인별 누적 추이</div>
-        </div>
-        <div style={{ textAlign: 'right', fontSize: '13px', color: '#94a3b8', lineHeight: 1.8 }}>
-          <div>생성일시: {fmtNow()}</div>
-          <div>작성자: {userName}</div>
         </div>
       </div>
 
@@ -308,7 +297,6 @@ function DetailReport({ sections, userName }: { sections: DetailSectionData[]; u
       </div>
 
       <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '8px', marginTop: '12px', display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94a3b8' }}>
-        <div>※ 본 보고서는 연장근무 관리 시스템에서 자동 생성되었습니다.</div>
         <div>{fmtNow()} 출력</div>
       </div>
     </div>
@@ -355,7 +343,7 @@ export function OverviewDownloadButton(props: OverviewReportProps) {
   );
 }
 
-export function DetailDownloadButton({ userName, sections }: { userName: string; sections: DetailSectionData[] }) {
+export function DetailDownloadButton({ sections }: { sections: DetailSectionData[] }) {
   const ref = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(false);
   const [rendering, setRendering] = useState(false);
@@ -385,7 +373,7 @@ export function DetailDownloadButton({ userName, sections }: { userName: string;
       </button>
       {rendering && createPortal(
         <div style={{ position: 'fixed', top: 0, left: '-100000px', pointerEvents: 'none' }}>
-          <div ref={ref}><DetailReport sections={sections} userName={userName} /></div>
+          <div ref={ref}><DetailReport sections={sections} /></div>
         </div>,
         document.body
       )}

@@ -68,6 +68,8 @@ model User {
   loginLogs  LoginLog[]
   uploadLogs UploadLog[]
   serverLogs ServerLog[]
+  ipAcls     IpAcl[]   @relation("IpAclCreatedBy")
+  ipAclLinks IpAcl[]   @relation("IpAclUser")
 
   @@index([role])
   @@index([isWithdrawn])
@@ -184,4 +186,31 @@ model ServerLog {
   @@index([createdAt])
   @@index([userId])
   @@index([path])
+}
+
+// =====================
+// IP 접근 제어 (ACL)
+// =====================
+// 관리자가 등록한 "허용 IP" 목록. 로그인 게이트 + 매 요청 재검사에 사용.
+// 적용 강도는 환경변수 IP_ACL_MODE(off/audit/enforce)로 제어한다.
+//   - 목록이 비어 있으면 게이트는 "미적용"(전체 허용). 첫 IP 등록 시 무장.
+//   - loopback(127.0.0.1, ::1)은 모드와 무관하게 항상 허용.
+model IpAcl {
+  id          String   @id @default(uuid())
+  ip          String   @unique          // 단일 IP (정규화된 형태로 저장)
+  ownerName   String?                    // 라벨(계정 미연결 회선용 — 예: "본사 출구"). userId와 함께 "이 IP의 주인" 식별
+  note        String?                    // 비고
+  isActive    Boolean  @default(true)    // 일시 비활성 토글
+
+  // 연결된 계정 — "어떤 계정이 어떤 IP인지" 가시성/감사용. 로그인 강제와는 무관(전역 허용목록 유지).
+  userId      String?
+  user        User?    @relation("IpAclUser", fields: [userId], references: [id])
+
+  createdById String?
+  createdBy   User?    @relation("IpAclCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([userId])
 }

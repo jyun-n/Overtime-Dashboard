@@ -7,6 +7,7 @@ import { signToken } from '../lib/jwt.js';
 import { requireAuth } from '../middleware/auth.js';
 import { logger, logToDb } from '../lib/logger.js';
 import { env } from '../lib/env.js';
+import { evaluateIp } from '../lib/ipAcl.js';
 
 const router = Router();
 
@@ -67,6 +68,25 @@ router.post('/login', loginLimiter, async (req, res) => {
   const { username, password } = parsed.data;
 
   const ip = clientIp(req);
+
+  // IP 접근 제어 게이트 — 비밀번호 검사 전에 차단해 허용 안 된 IP엔 계정/비번 정보를 흘리지 않는다.
+  if (env.ipAclMode !== 'off') {
+    const verdict = await evaluateIp(ip);
+    if (!verdict.allowed) {
+      logToDb({
+        level: 'WARN',
+        message: 'login ip blocked',
+        ip: verdict.normalized,
+        context: { username, mode: env.ipAclMode },
+      });
+      // enforce에서만 실제 차단. audit는 기록만 하고 통과시켜 실측에 쓴다.
+      if (env.ipAclMode === 'enforce') {
+        res.status(403).json({ error: 'ip_not_allowed', ip: verdict.normalized });
+        return;
+      }
+    }
+  }
+
   const user = await prisma.user.findUnique({ where: { username } });
   if (!user || user.isWithdrawn) {
     logToDb({

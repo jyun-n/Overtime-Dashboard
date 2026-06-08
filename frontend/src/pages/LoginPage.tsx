@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Lock, User } from 'lucide-react';
 import { api } from '../lib/api';
@@ -20,6 +21,7 @@ export default function LoginPage() {
   const [saveId, setSaveId] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [blockedIp, setBlockedIp] = useState<string | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem(SAVED_ID_KEY);
@@ -47,10 +49,12 @@ export default function LoginPage() {
       setAuth(data.user);
       navigate('/dashboard', { replace: true });
     } catch (err: unknown) {
-      const response = (err as { response?: { status?: number; data?: { error?: string } } })?.response;
+      const response = (err as { response?: { status?: number; data?: { error?: string; ip?: string } } })?.response;
       const status = response?.status;
       const errCode = response?.data?.error;
-      if (status === 401) {
+      if (status === 403 && errCode === 'ip_not_allowed') {
+        setBlockedIp(response?.data?.ip ?? '');
+      } else if (status === 401) {
         setError('아이디 또는 비밀번호가 올바르지 않습니다.');
       } else if (status === 429) {
         setError(
@@ -197,6 +201,38 @@ export default function LoginPage() {
           </div>
         </div>
       </div>
+
+      {blockedIp !== null && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-[440px] rounded-[28px] border border-rose-500/20 bg-[linear-gradient(180deg,rgba(15,23,42,0.97),rgba(2,8,23,0.99))] p-7 text-center shadow-[0_0_60px_rgba(244,63,94,0.18)] backdrop-blur-2xl">
+            <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-500/15 ring-1 ring-rose-500/30">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+                <path d="M12 2l8 4v6c0 5-3.4 8.3-8 10-4.6-1.7-8-5-8-10V6l8-4z" stroke="#f87171" strokeWidth="1.7" strokeLinejoin="round" />
+                <path d="M12 8v4M12 16h.01" stroke="#f87171" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+            </div>
+            <h2 className="text-[20px] font-semibold tracking-[-0.03em] text-white">접근이 허용되지 않은 IP입니다</h2>
+            <p className="mt-2.5 text-[13.5px] leading-relaxed text-slate-400">
+              현재 접속하신 환경에서는 로그인할 수 없습니다.<br />
+              접속이 필요하시면 관리자에게 아래 IP 등록을 요청하세요.
+            </p>
+            {blockedIp && (
+              <div className="mx-auto mt-4 inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5">
+                <span className="text-[12px] text-slate-500">현재 IP</span>
+                <span className="font-mono text-[14px] font-semibold text-white">{blockedIp}</span>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setBlockedIp(null)}
+              className="mt-6 h-[48px] w-full rounded-[14px] bg-gradient-to-r from-blue-600 to-sky-500 text-[14px] font-semibold text-white transition hover:brightness-110"
+            >
+              확인
+            </button>
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

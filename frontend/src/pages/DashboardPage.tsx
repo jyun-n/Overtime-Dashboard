@@ -85,23 +85,6 @@ export default function DashboardPage() {
             <span>인사정보 파일 : {hrAt ? fmtKorean(hrAt) : '업데이트 없음'}</span>
             <span className="mx-2 text-slate-600">|</span>
             <span>연장근무 데이터 : {overtimeAt ? fmtKorean(overtimeAt) : '업데이트 없음'}</span>
-            <span className="mx-2 text-slate-600">|</span>
-            <span className="flex items-center gap-2 text-[12px] text-slate-500">
-              <span>
-                <span className="text-slate-600">이름 :</span>
-                <span className="ml-1 font-medium text-slate-300">{user?.name ?? '—'}</span>
-              </span>
-              <span className="text-slate-700">·</span>
-              <span>
-                <span className="text-slate-600">부서 :</span>
-                <span className="ml-1 font-medium text-slate-300">{user?.department || '—'}</span>
-              </span>
-              <span className="text-slate-700">·</span>
-              <span>
-                <span className="text-slate-600">IP :</span>
-                <span className="ml-1 font-mono font-medium text-slate-300">{user?.ip || '—'}</span>
-              </span>
-            </span>
           </div>
         </div>
 
@@ -117,11 +100,10 @@ export default function DashboardPage() {
                 topDeptsAuto={overviewData.topDeptsAuto}
                 topDeptsExcess={overviewData.topDeptsExcess}
                 persons={overviewData.persons}
-                userName={user?.name ?? ''}
               />
             )}
             {tab === 'detail' && (
-              <DetailDownloadButton userName={user?.name ?? ''} sections={detailSections} />
+              <DetailDownloadButton sections={detailSections} />
             )}
             <div className="inline-flex rounded-2xl border border-white/10 bg-white/[0.03] p-1">
               <TabButton active={tab === 'overview'} onClick={() => setTab('overview')}>종합</TabButton>

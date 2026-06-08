@@ -42,6 +42,14 @@ function clientIp(req: import('express').Request): string {
   return req.ip ?? '';
 }
 
+// 작업하는 관리자 본인의 로그인 비밀번호로 재인증 (수정/탈퇴/일반계정 재설정 확인용).
+async function verifyOwnPassword(actorId: string, provided: string): Promise<boolean> {
+  if (!provided) return false;
+  const actor = await prisma.user.findUnique({ where: { id: actorId }, select: { passwordHash: true } });
+  if (!actor) return false;
+  return verifyPassword(provided, actor.passwordHash);
+}
+
 // ──────────────────────────────────────────────
 // GET /api/users
 // ──────────────────────────────────────────────
@@ -155,6 +163,7 @@ const updateSchema = z.object({
   role:       z.enum(['ADMIN', 'USER']).optional(),
   department: z.string().max(50).optional(),
   jobGroup:   z.string().max(50).optional(),
+  password:   z.string().min(1).max(128), // 작업 관리자 본인 비밀번호
 });
 
 router.patch('/:id', async (req, res) => {
@@ -176,9 +185,16 @@ router.patch('/:id', async (req, res) => {
     return;
   }
 
+  // 작업 관리자 본인 비밀번호 확인
+  if (!(await verifyOwnPassword(req.user!.id, parsed.data.password))) {
+    res.status(403).json({ error: 'invalid_password' });
+    return;
+  }
+
+  const { password: _pw, ...updateData } = parsed.data;
   const updated = await prisma.user.update({
     where: { id: req.params.id },
-    data: parsed.data,
+    data: updateData,
     select: { id: true, username: true, name: true, role: true, updatedAt: true },
   });
 
@@ -225,8 +241,8 @@ router.patch('/:id', async (req, res) => {
 // POST /api/users/:id/reset-password
 // ──────────────────────────────────────────────
 const resetSchema = z.object({
-  newPassword:    passwordPolicy,
-  masterPassword: z.string().optional(), // admin 계정 변경 시 필요
+  newPassword: passwordPolicy,
+  password:    z.string().min(1).max(128), // admin 대상=마스터, 그 외=작업 관리자 본인 비밀번호
 });
 
 // root admin 비밀번호 리셋은 마스터 비번 brute-force가 가능하므로 별도 강한 제한.
@@ -268,12 +284,11 @@ router.post('/:id/reset-password', resetPasswordLimiter, async (req, res) => {
     return;
   }
 
-  // admin(root) 비밀번호 변경 시 마스터 비밀번호 확인
+  const provided = parsed.data.password;
   if (target.username === 'admin') {
-    const provided = parsed.data.masterPassword ?? '';
+    // admin(root) 재설정: 마스터 비밀번호(env) 또는 admin 계정의 현재 비밀번호로 확인
     const masterOk = await verifyPassword(provided, target.passwordHash);
-    // 마스터 비밀번호가 틀리면 env.withdrawPassword로 2차 확인 (timing-safe 비교)
-    const envOk = safeEqual(provided, env.withdrawPassword);
+    const envOk = safeEqual(provided, env.withdrawPassword); // timing-safe 비교
     if (!masterOk && !envOk) {
       logToDb({
         level: 'WARN',
@@ -283,6 +298,19 @@ router.post('/:id/reset-password', resetPasswordLimiter, async (req, res) => {
         context: { targetUsername: target.username, actorUsername: req.user!.username },
       });
       res.status(403).json({ error: 'master_password_required' });
+      return;
+    }
+  } else {
+    // 일반 계정 재설정: 작업하는 관리자 본인 비밀번호로 확인
+    if (!(await verifyOwnPassword(req.user!.id, provided))) {
+      logToDb({
+        level: 'WARN',
+        message: 'reset-password own-password failed',
+        userId: req.user!.id,
+        ip: clientIp(req),
+        context: { targetUsername: target.username, actorUsername: req.user!.username },
+      });
+      res.status(403).json({ error: 'invalid_password' });
       return;
     }
   }
@@ -333,6 +361,20 @@ router.delete('/:id', async (req, res) => {
     return;
   }
 
+  // 작업 관리자 본인 비밀번호 확인
+  const provided = typeof req.body?.password === 'string' ? req.body.password : '';
+  if (!(await verifyOwnPassword(req.user!.id, provided))) {
+    logToDb({
+      level: 'WARN',
+      message: 'user withdraw password failed',
+      userId: req.user!.id,
+      ip: clientIp(req),
+      context: { targetUsername: target.username, actorUsername: req.user!.username },
+    });
+    res.status(403).json({ error: 'invalid_password' });
+    return;
+  }
+
   await prisma.user.update({
     where: { id: req.params.id },
     data: {
@@ -369,7 +411,10 @@ router.get('/audit-logs', async (req, res) => {
   const logs = await prisma.serverLog.findMany({
     where: {
       message: {
-        in: ['user created', 'user updated', 'user withdrawn', 'password reset'],
+        in: [
+          'user created', 'user updated', 'user withdrawn', 'password reset',
+          'ip-acl added', 'ip-acl removed', 'ip-acl toggled',
+        ],
       },
     },
     take: limit,
@@ -391,7 +436,7 @@ router.get('/audit-logs', async (req, res) => {
         id: l.id,
         at: l.createdAt,
         actorUsername: l.user?.username ?? ctx.actorUsername ?? 'admin',
-        targetName: ctx.targetName ?? '',
+        targetName: ctx.targetName ?? ctx.targetIp ?? '',
         targetUsername: ctx.targetUsername ?? '',
         action: ctx.action ?? 'CREATE',
         detail: ctx.detail ?? '',
