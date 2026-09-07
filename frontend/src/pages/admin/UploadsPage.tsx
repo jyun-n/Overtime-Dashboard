@@ -125,6 +125,8 @@ export default function UploadsPage() {
     upserted: number;
     skipped: number;
     missingJobGroup?: number;
+    missingDepartment?: number;
+    duplicateEmpNo?: number;
   }>({ visible: false, title: '', upserted: 0, skipped: 0 });
 
   function confirmUpload(label: string, doUpload: () => Promise<void>): Promise<void> {
@@ -267,6 +269,8 @@ export default function UploadsPage() {
               title: `${year}년 ${month}월 연장근무 업로드 완료`,
               upserted: data.upserted ?? 0,
               skipped: data.skipped ?? 0,
+              missingDepartment: data.missingDepartment ?? 0,
+              duplicateEmpNo: data.duplicateEmpNo ?? 0,
             });
             setOvertimeFile(null);
             void loadLogs();
@@ -467,6 +471,21 @@ export default function UploadsPage() {
                 <p className="mt-1.5 text-[12px] leading-relaxed text-slate-500">
                   적용 건수가 원본 파일의 인원수와 일치하는지 확인하세요.
                 </p>
+                {!!resultToast.duplicateEmpNo && (
+                  <p className="mt-2 rounded-lg border border-rose-400/30 bg-rose-400/[0.08] px-3 py-2 text-[12.5px] leading-relaxed text-rose-200">
+                    같은 사번이 <b>{resultToast.duplicateEmpNo.toLocaleString()}번</b> 중복된 파일입니다.
+                    중복된 사번은 <b>합산되지 않고 마지막 줄 값으로 덮어쓰기</b>됩니다.
+                    부서 이동자를 두 줄로 나눈 파일이라면 실적 일부가 누락되므로,
+                    <b>사번당 한 줄로 합산</b>해 다시 올려주세요.
+                  </p>
+                )}
+                {!!resultToast.missingDepartment && (
+                  <p className="mt-2 rounded-lg border border-amber-400/25 bg-amber-400/[0.07] px-3 py-2 text-[12.5px] leading-relaxed text-amber-200">
+                    부서가 비어 있는 행이 <b>{resultToast.missingDepartment.toLocaleString()}건</b> 있습니다.
+                    부서별 집계와 부서 필터에서 <b>이름 없는 항목</b>으로 묶이니,
+                    원본 파일의 부서 칸을 확인해 주세요.
+                  </p>
+                )}
                 {!!resultToast.missingJobGroup && (
                   <p className="mt-2 rounded-lg border border-amber-400/25 bg-amber-400/[0.07] px-3 py-2 text-[12.5px] leading-relaxed text-amber-200">
                     직군이 비어 있는 직원 <b>{resultToast.missingJobGroup.toLocaleString()}명</b>을 <b>'미지정'</b>으로 묶었습니다.

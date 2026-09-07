@@ -206,6 +206,13 @@ router.post('/overtime', upload.single('file'), async (req, res) => {
 
   let upserted = 0;
   let skipped = 0;
+  // 조용히 지나가면 나중에 발견되는 두 가지를 업로더에게 즉시 알린다.
+  //  - 부서 공란: 부서별 집계에서 이름 없는 항목으로 묶인다.
+  //  - 중복 사번: (연월, 사번) upsert라 합산되지 않고 **마지막 줄로 덮어쓴다**.
+  //    부서 이동자를 이동 전/후 두 줄로 나누어 뽑은 파일이면 실적 일부가 유실된다.
+  let missingDepartment = 0;
+  let duplicateEmpNo = 0;
+  const seenEmpNos = new Set<string>();
   for (const row of dataRows) {
     const empNo = String(row['사번'] ?? row['사원번호'] ?? '').trim();
     const name = String(row['사원명'] ?? row['이름'] ?? '').trim();
@@ -213,6 +220,10 @@ router.post('/overtime', upload.single('file'), async (req, res) => {
 
     // 사번이 없거나 숫자가 아니면 합계행 등 무효 행으로 간주
     if (!empNo || !name || !/^\d+$/.test(empNo)) { skipped++; continue; }
+
+    if (!department) missingDepartment++;
+    if (seenEmpNos.has(empNo)) duplicateEmpNo++;
+    else seenEmpNos.add(empNo);
 
     const n = (v: unknown) => (v !== null && v !== '' ? Number(v) : null);
 
@@ -248,16 +259,16 @@ router.post('/overtime', upload.single('file'), async (req, res) => {
     upserted++;
   }
 
-  logger.info('overtime uploaded', { actorId: req.user!.id, yearMonth, upserted, skipped });
+  logger.info('overtime uploaded', { actorId: req.user!.id, yearMonth, upserted, skipped, missingDepartment, duplicateEmpNo });
   logToDb({
     level: 'INFO',
     message: 'overtime uploaded',
     userId: req.user!.id,
     ip: clientIp(req),
-    context: { yearMonth, upserted, skipped },
+    context: { yearMonth, upserted, skipped, missingDepartment, duplicateEmpNo },
   });
 
-  res.json({ ok: true, upserted, skipped });
+  res.json({ ok: true, upserted, skipped, missingDepartment, duplicateEmpNo });
 });
 
 export default router;
