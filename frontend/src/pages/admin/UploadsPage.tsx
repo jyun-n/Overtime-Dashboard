@@ -118,6 +118,15 @@ export default function UploadsPage() {
     onConfirm: (() => void) | null;
   }>({ visible: false, message: '', onConfirm: null });
 
+  // 업로드 결과 요약 — 적용/건너뜀 건수를 원본 인원수와 대조하는 것이 1차 검증이다.
+  const [resultToast, setResultToast] = useState<{
+    visible: boolean;
+    title: string;
+    upserted: number;
+    skipped: number;
+    missingJobGroup?: number;
+  }>({ visible: false, title: '', upserted: 0, skipped: 0 });
+
   function confirmUpload(label: string, doUpload: () => Promise<void>): Promise<void> {
     return new Promise((resolve, reject) => {
       setWarnToast({
@@ -212,8 +221,15 @@ export default function UploadsPage() {
             if (!hrFile) return;
             const formData = new FormData();
             formData.append('file', hrFile);
-            await api.post('/upload/hr', formData, {
+            const { data } = await api.post('/upload/hr', formData, {
               headers: { 'Content-Type': 'multipart/form-data' },
+            });
+            setResultToast({
+              visible: true,
+              title: '인사정보 업로드 완료',
+              upserted: data.upserted ?? 0,
+              skipped: data.skipped ?? 0,
+              missingJobGroup: data.missingJobGroup ?? 0,
             });
             setHrFile(null);
             void loadLogs();
@@ -243,8 +259,14 @@ export default function UploadsPage() {
             const formData = new FormData();
             formData.append('file', overtimeFile);
             formData.append('yearMonth', `${year}-${String(month).padStart(2, '0')}`);
-            await api.post('/upload/overtime', formData, {
+            const { data } = await api.post('/upload/overtime', formData, {
               headers: { 'Content-Type': 'multipart/form-data' },
+            });
+            setResultToast({
+              visible: true,
+              title: `${year}년 ${month}월 연장근무 업로드 완료`,
+              upserted: data.upserted ?? 0,
+              skipped: data.skipped ?? 0,
             });
             setOvertimeFile(null);
             void loadLogs();
@@ -421,6 +443,45 @@ export default function UploadsPage() {
                 className="rounded-xl bg-amber-500 px-4 py-2 text-[13px] font-semibold text-white shadow-[0_4px_16px_rgba(245,158,11,0.3)] transition hover:bg-amber-400"
               >
                 확인 · 업로드
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {resultToast.visible && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center px-4 bg-black/50 backdrop-blur-sm">
+          <div className="w-full max-w-[480px] flex flex-col gap-3 rounded-2xl border border-sky-400/40 bg-[#001322] px-5 py-4 shadow-[0_0_0_1px_rgba(56,189,248,0.15),0_32px_80px_rgba(0,0,0,0.85),0_0_60px_rgba(56,189,248,0.08)] backdrop-blur-xl">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-400/15 text-sky-400">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M20 6 9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="text-[13.5px] font-semibold text-sky-100">{resultToast.title}</p>
+                <p className="mt-1.5 text-[13px] text-slate-300">
+                  적용 <b className="text-white">{resultToast.upserted.toLocaleString()}</b>건
+                  {resultToast.skipped > 0 && <> · 건너뜀 <b className="text-amber-300">{resultToast.skipped.toLocaleString()}</b>건</>}
+                </p>
+                <p className="mt-1.5 text-[12px] leading-relaxed text-slate-500">
+                  적용 건수가 원본 파일의 인원수와 일치하는지 확인하세요.
+                </p>
+                {!!resultToast.missingJobGroup && (
+                  <p className="mt-2 rounded-lg border border-amber-400/25 bg-amber-400/[0.07] px-3 py-2 text-[12.5px] leading-relaxed text-amber-200">
+                    직군이 비어 있는 직원 <b>{resultToast.missingJobGroup.toLocaleString()}명</b>을 <b>'미지정'</b>으로 묶었습니다.
+                    직군별 차트에서 별도 항목으로 표시되므로, 원본 파일의 직군 칸을 채워 다시 올리시는 것을 권장합니다.
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setResultToast(prev => ({ ...prev, visible: false }))}
+                className="rounded-xl bg-sky-500 px-4 py-2 text-[13px] font-semibold text-white shadow-[0_4px_16px_rgba(56,189,248,0.3)] transition hover:bg-sky-400"
+              >
+                확인
               </button>
             </div>
           </div>

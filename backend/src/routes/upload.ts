@@ -6,6 +6,7 @@ import { prisma } from '../lib/prisma.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { logger, logToDb } from '../lib/logger.js';
 import { env } from '../lib/env.js';
+import { UNASSIGNED_JOB_GROUP } from '../lib/constants.js';
 
 const router = Router();
 router.use(requireAuth, requireAdmin);
@@ -111,13 +112,17 @@ router.post('/hr', upload.single('file'), async (req, res) => {
   // 먼저 유효한 행만 메모리에서 정리
   const validRows: { empNo: string; name: string; department: string; jobGroup: string }[] = [];
   let skipped = 0;
+  let missingJobGroup = 0;
   for (const row of rows) {
     const empNo = String(row['사원번호'] ?? row['사번'] ?? '').trim();
     const name = String(row['사원명'] ?? row['이름'] ?? '').trim();
     const department = String(row['소속부서'] ?? row['부서'] ?? '').trim();
     const jobGroup = String(row['직군'] ?? '').trim();
     if (!empNo || !name) { skipped++; continue; }
-    validRows.push({ empNo, name, department, jobGroup });
+    // 직군이 비면 직군별 집계에서 통째로 빠지고 필터 목록에도 이름 없는 항목으로 뜼다.
+    // '미지정'으로 묶어 집계에 남기고, 누락 건수를 업로더에게 알린다.
+    if (!jobGroup) missingJobGroup++;
+    validRows.push({ empNo, name, department, jobGroup: jobGroup || UNASSIGNED_JOB_GROUP });
   }
 
   // 유효 행이 없으면 기존 데이터를 날리지 않고 거절. 잘못된 파일로 인사정보가 비어버리는 사고 방지.
@@ -143,16 +148,16 @@ router.post('/hr', upload.single('file'), async (req, res) => {
 
   const upserted = validRows.length;
 
-  logger.info('hr uploaded', { actorId: req.user!.id, upserted, skipped });
+  logger.info('hr uploaded', { actorId: req.user!.id, upserted, skipped, missingJobGroup });
   logToDb({
     level: 'INFO',
     message: 'hr uploaded',
     userId: req.user!.id,
     ip: clientIp(req),
-    context: { upserted, skipped },
+    context: { upserted, skipped, missingJobGroup },
   });
 
-  res.json({ ok: true, upserted, skipped });
+  res.json({ ok: true, upserted, skipped, missingJobGroup });
 });
 
 // ──────────────────────────────────────────────

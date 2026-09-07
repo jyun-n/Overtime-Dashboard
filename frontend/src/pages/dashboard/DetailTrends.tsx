@@ -427,7 +427,7 @@ function JobTrendSection({ onSectionData }: { onSectionData?: (s: DetailSectionD
           <OvertimeTypeSelector selected={selectedTypes} accentColor="violet" onChange={(v) => setSelectedTypes(v as OvertimeType[])} />
         </div>
       </div>
-      {pickerOpen && <DeptMultiPicker allDepts={availableJobs} selected={selectedCats} onChange={setSelectedCats} onClose={() => setPickerOpen(false)} />}
+      {pickerOpen && <DeptMultiPicker allDepts={availableJobs} selected={selectedCats} onChange={setSelectedCats} onClose={() => setPickerOpen(false)} label="직군" />}
     </SectionCard>
   );
 }
@@ -641,9 +641,10 @@ function OvertimeTypeSelector({ selected, accentColor, onChange }: {
   );
 }
 
-function DeptMultiPicker({ allDepts, selected, onChange, onClose }: {
+function DeptMultiPicker({ allDepts, selected, onChange, onClose, label = '부서' }: {
   allDepts: string[]; selected: string[];
   onChange: (next: string[]) => void; onClose: () => void;
+  label?: string; // 부서·직군 양쪽에서 재사용된다. 호출부가 부르는 이름을 그대로 표시.
 }) {
   const [search, setSearch] = useState('');
   const filtered = useMemo(() => {
@@ -664,7 +665,7 @@ function DeptMultiPicker({ allDepts, selected, onChange, onClose }: {
       <div onClick={(e) => e.stopPropagation()} className="w-full max-w-[520px] rounded-t-[28px] border border-white/[0.1] bg-[#0b1728] sm:rounded-[24px]" style={{ boxShadow: '0 -24px 80px rgba(2,132,199,0.15)' }}>
         <div className="flex items-center justify-between px-5 py-4">
           <div className="flex items-center gap-2.5">
-            <h2 className="text-[16px] font-semibold text-white">부서 필터</h2>
+            <h2 className="text-[16px] font-semibold text-white">{label} 필터</h2>
             <span className="rounded-full bg-sky-500/[0.15] px-2 py-0.5 text-[14px] font-semibold text-sky-300">{selected.length}/{allDepts.length}</span>
           </div>
           <button type="button" onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white/10 hover:text-white"><X size={15} /></button>
@@ -673,7 +674,7 @@ function DeptMultiPicker({ allDepts, selected, onChange, onClose }: {
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
               <Search size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-600" />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="부서 검색..." className="h-[36px] w-full rounded-[10px] border border-white/[0.08] bg-white/[0.04] pl-8 pr-3 text-[14px] text-white outline-none transition placeholder:text-slate-600 focus:border-sky-500/40" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`${label} 검색...`} className="h-[36px] w-full rounded-[10px] border border-white/[0.08] bg-white/[0.04] pl-8 pr-3 text-[14px] text-white outline-none transition placeholder:text-slate-600 focus:border-sky-500/40" />
             </div>
             <button type="button" onClick={() => onChange(allSelected ? [] : [...allDepts])} className={`h-[36px] shrink-0 rounded-[10px] border px-3.5 text-[13px] font-medium transition ${allSelected ? 'border-rose-400/20 bg-rose-500/[0.07] text-rose-300' : 'border-sky-400/20 bg-sky-500/[0.07] text-sky-300'}`}>
               {allSelected ? '모두 해제' : '모두 선택'}
@@ -683,7 +684,7 @@ function DeptMultiPicker({ allDepts, selected, onChange, onClose }: {
         <div className="mx-5 border-t border-white/[0.06]" />
         <div className="overflow-y-auto px-5 pt-3" style={{ height: '400px' }}>
           {filtered.length === 0 ? (
-            <p className="py-10 text-center text-[14px] text-slate-600">"{search}"에 해당하는 부서가 없습니다.</p>
+            <p className="py-10 text-center text-[14px] text-slate-600">"{search}" 검색 결과가 없습니다.</p>
           ) : (
             <div className="grid grid-cols-2 gap-1.5 pb-2">
               {filtered.map((d) => {

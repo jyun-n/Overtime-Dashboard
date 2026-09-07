@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
+import { UNASSIGNED_JOB_GROUP } from '../lib/constants.js';
 import * as XLSX from 'xlsx';
 
 const router = Router();
@@ -252,8 +253,11 @@ router.get('/job-trend', async (req, res) => {
   const employees = await prisma.hrEmployee.findMany({
     select: { empNo: true, jobGroup: true },
   });
-  const empJobMap = new Map(employees.map(e => [e.empNo, e.jobGroup]));
-  const jobGroups = [...new Set(employees.map(e => e.jobGroup))].sort();
+  // 과거 업로드분에는 직군이 빈 문자열인 행이 남아 있다. 그대로 두면 필터 목록에
+  // 이름 없는 항목으로 뜼고, 아래 매핑에서 falsy로 걸러져 집계에서도 빠진다. 정규화해 살려둔다.
+  const jobOf = (jg: string) => jg || UNASSIGNED_JOB_GROUP;
+  const empJobMap = new Map(employees.map(e => [e.empNo, jobOf(e.jobGroup)]));
+  const jobGroups = [...new Set(employees.map(e => jobOf(e.jobGroup)))].sort();
 
   const result = await Promise.all(months.map(async (ym) => {
     const recs = await prisma.overtimeRecord.findMany({
@@ -271,7 +275,7 @@ router.get('/job-trend', async (req, res) => {
 
     for (const r of recs) {
       const jg = empJobMap.get(r.empNo);
-      if (!jg) continue;
+      if (!jg) continue; // 인사정보에 없는 사번 (빈 직군은 위에서 '미지정'으로 정규화됨)
       const v = metric === 'auto' ? (r.autoHours ?? 0)
               : metric === 'excess' ? (r.excessHours ?? 0)
               : (r.extensionHours ?? 0);
