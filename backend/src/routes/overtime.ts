@@ -257,7 +257,25 @@ router.get('/job-trend', async (req, res) => {
   // 이름 없는 항목으로 뜼고, 아래 매핑에서 falsy로 걸러져 집계에서도 빠진다. 정규화해 살려둔다.
   const jobOf = (jg: string) => jg || UNASSIGNED_JOB_GROUP;
   const empJobMap = new Map(employees.map(e => [e.empNo, jobOf(e.jobGroup)]));
-  const jobGroups = [...new Set(employees.map(e => jobOf(e.jobGroup)))].sort();
+
+  // 직군 목록은 "해당 기간에 실제 연장근무 기록이 있는 직군"으로만 뽑는다.
+  // 인사정보 전체로 뽑으면 연장근무 기록이 하나도 없는 인원(예: 사번 체계가 다른
+  // 인사정보 전용 레코드)의 직군까지 필터에 떠서, 선택해도 항상 0인 항목이 생긴다.
+  // /depts(부서 목록)와 동일한 방식으로 맞춘다.
+  const presentEmpNos = await prisma.overtimeRecord.findMany({
+    where: { yearMonth: { in: months } },
+    select: { empNo: true },
+    distinct: ['empNo'],
+  });
+  let jobGroups = [...new Set(
+    presentEmpNos
+      .map(p => empJobMap.get(p.empNo))
+      .filter((jg): jg is string => !!jg),
+  )].sort();
+  // 해당 기간에 데이터가 없으면 picker가 비어 보이지 않도록 전체 직군으로 fallback (부서와 동일)
+  if (jobGroups.length === 0) {
+    jobGroups = [...new Set(employees.map(e => jobOf(e.jobGroup)))].sort();
+  }
 
   const result = await Promise.all(months.map(async (ym) => {
     const recs = await prisma.overtimeRecord.findMany({
