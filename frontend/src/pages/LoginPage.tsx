@@ -5,9 +5,14 @@ import { Eye, EyeOff, Lock, User } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuthStore } from '../lib/store';
 import type { AuthUser } from '../types/auth';
-import logo from '../assets/images/logo.png';
+import logoDefault from '../assets/images/logo.png';
 
 type LoginResponse = { user: AuthUser };
+
+// 기관 브랜딩 — 빌드 시 VITE_LOGO_URL / VITE_ORG_NAME 으로 교체한다.
+// 미설정이면 광명병원 기본값(기존 빌드와 동일). 로고 파일은 public/ 아래에 두고 절대경로로 지정.
+const ORG_NAME = import.meta.env.VITE_ORG_NAME || '중앙대학교광명병원';
+const LOGO_SRC = import.meta.env.VITE_LOGO_URL || logoDefault;
 
 const SAVED_ID_KEY = 'overtime-saved-id';
 
@@ -84,8 +89,8 @@ export default function LoginPage() {
             <div className="rounded-[32px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(15,23,42,0.82),rgba(2,8,23,0.96))] px-9 py-9 shadow-[0_20px_80px_rgba(2,132,199,0.10)] backdrop-blur-2xl">
               <div className="mb-8 flex flex-col items-center text-center">
                 <img
-                  src={logo}
-                  alt="중앙대학교광명병원"
+                  src={LOGO_SRC}
+                  alt={ORG_NAME}
                   className="mb-6 h-12 w-auto object-contain sm:h-14"
                 />
 
