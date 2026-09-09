@@ -58,15 +58,10 @@ git clone -b demo https://github.com/jyun-n/Overtime-Dashboard.git .   # ⚠️ 
 npm ci                       # ⚠️ 반드시 저장소 루트에서 (npm workspaces)
 ```
 
-**로고 파일 배치** — 로컬 PC에서 서버로 전송:
+**로고는 `demo` 브랜치에 포함되어 있다** — 별도 전송 불필요. clone 후 확인만:
 ```bash
-# 로컬(PowerShell)에서
-scp .\logo-cau.png caumc@10.10.248.87:/tmp/
-# 서버에서
-mkdir -p /opt/overtime-demo/frontend/public/brand
-mv /tmp/logo-cau.png /opt/overtime-demo/frontend/public/brand/logo-cau.png
+ls -l /opt/overtime-demo/frontend/public/brand/logo-cau.png    # 약 35KB
 ```
-> `public/brand/`는 git에 없는 경로라 `git pull` 해도 파일이 유지된다.
 
 ## 3. `.env` 작성
 
